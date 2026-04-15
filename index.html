@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pith — token optimization for Claude Code</title>
+  <meta name="description" content="40–60% token reduction. Zero config. Works from install." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+      --mono: "SF Mono", ui-monospace, "Cascadia Code", monospace;
+      --bg: #000;
+      --fg: #fff;
+      --fg2: rgba(255,255,255,0.55);
+      --fg3: rgba(255,255,255,0.25);
+      --fg4: rgba(255,255,255,0.10);
+      --border: rgba(255,255,255,0.08);
+      --blue: #0a84ff;
+      --green: #30d158;
+      --red: #ff453a;
+      --amber: #ffd60a;
+      --ease: cubic-bezier(0.25,0.46,0.45,0.94);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ━━━━ NAV ━━━━ */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      height: 48px;
+      padding: 0 24px;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--fg);
+      text-decoration: none;
+      margin-right: auto;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 28px;
+      list-style: none;
+      margin-right: 28px;
+    }
+
+    .nav-links a {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--fg2);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--fg); }
+
+    .btn-nav {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--fg);
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.14);
+      padding: 6px 14px;
+      border-radius: 980px;
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .btn-nav:hover { background: rgba(255,255,255,0.18); }
+
+    /* ━━━━ HERO ━━━━ */
+    .hero {
+      position: relative;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 80px 24px 64px;
+      overflow: hidden;
+    }
+
+    /* Aurora mesh */
+    .hero-mesh {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .mesh-orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(100px);
+    }
+
+    .m1 { width: 800px; height: 500px; background: radial-gradient(ellipse, rgba(10,132,255,0.12) 0%, transparent 70%); top: -10%; left: 50%; transform: translateX(-50%); }
+    .m2 { width: 400px; height: 400px; background: radial-gradient(ellipse, rgba(48,209,88,0.06) 0%, transparent 70%); bottom: 10%; right: 5%; }
+    .m3 { width: 300px; height: 300px; background: radial-gradient(ellipse, rgba(255,214,10,0.05) 0%, transparent 70%); bottom: 20%; left: 5%; }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--fg3);
+      margin-bottom: 40px;
+    }
+
+    .eyebrow-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 10px rgba(10,132,255,0.8);
+      animation: blink 2.5s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .hero h1 {
+      font-size: clamp(64px, 10.5vw, 108px);
+      font-weight: 700;
+      letter-spacing: -0.045em;
+      line-height: 0.95;
+      margin-bottom: 32px;
+    }
+
+    .h1-a { display: block; color: #fff; }
+    .h1-b { display: block; color: rgba(255,255,255,0.28); }
+
+    .hero-sub {
+      font-size: 19px;
+      font-weight: 400;
+      color: var(--fg2);
+      line-height: 1.6;
+      letter-spacing: -0.015em;
+      max-width: 420px;
+      margin: 0 auto 48px;
+    }
+
+    /* ━━━━ INSTALL BOX ━━━━ */
+    .install-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .install-box {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .install-box:hover { border-color: rgba(255,255,255,0.22); }
+
+    .install-ps {
+      padding: 0 8px 0 18px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--fg3);
+      user-select: none;
+    }
+
+    .install-code {
+      padding: 14px 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: rgba(255,255,255,0.85);
+      letter-spacing: -0.01em;
+    }
+
+    .install-copy {
+      border: none;
+      border-left: 1px solid rgba(255,255,255,0.08);
+      background: transparent;
+      color: var(--fg3);
+      padding: 14px 18px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .install-copy:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
+
+    .gh-link {
+      font-size: 14px;
+      color: var(--fg3);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      transition: color 0.2s;
+    }
+
+    .gh-link:hover { color: var(--fg2); }
+
+    /* ━━━━ TOKEN COUNTER HERO VISUAL ━━━━ */
+    .hero-visual {
+      position: relative;
+      z-index: 1;
+      margin-top: 72px;
+      display: flex;
+      justify-content: center;
+      gap: 2px;
+    }
+
+    .mini-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mini-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 60px;
+    }
+
+    .mbar {
+      width: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.1);
+      transition: height 1.2s var(--ease), background 1.2s;
+    }
+
+    .mbar.lit { background: rgba(10,132,255,0.7); }
+    .mbar.lit-green { background: rgba(48,209,88,0.7); }
+
+    .mini-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg4);
+    }
+
+    /* ━━━━ STAT ROW ━━━━ */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat {
+      padding: 52px 48px;
+      border-right: 1px solid var(--border);
+    }
+
+    .stat:last-child { border-right: none; }
+
+    .stat-n {
+      font-size: 72px;
+      font-weight: 700;
+      letter-spacing: -0.05em;
+      line-height: 1;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .stat-l {
+      font-size: 14px;
+      color: var(--fg2);
+      letter-spacing: -0.01em;
+      line-height: 1.5;
+    }
+
+    /* ━━━━ SECTION ━━━━ */
+    .s {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 96px 48px;
+    }
+
+    .s-eye {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 20px;
+    }
+
+    .s-h {
+      font-size: clamp(36px, 4.5vw, 56px);
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      line-height: 1.05;
+      margin-bottom: 20px;
+    }
+
+    .s-p {
+      font-size: 17px;
+      color: var(--fg2);
+      line-height: 1.7;
+      letter-spacing: -0.01em;
+      max-width: 440px;
+    }
+
+    /* ━━━━ BEFORE/AFTER ━━━━ */
+    .ba {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      margin-top: 56px;
+    }
+
+    .ba-card {
+      background: #0a0a0a;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .ba-card.is-after {
+      border-color: rgba(48,209,88,0.12);
+    }
+
+    .ba-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .ba-tag {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .ba-tag.bad  { color: var(--red); }
+    .ba-tag.good { color: var(--green); }
+
+    .ba-pill {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 980px;
+    }
+
+    .ba-pill.bad  { background: rgba(255,69,58,0.1); color: var(--red); border: 1px solid rgba(255,69,58,0.2); }
+    .ba-pill.good { background: rgba(48,209,88,0.1); color: var(--green); border: 1px solid rgba(48,209,88,0.2); }
+
+    .ba-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 20px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    .ba-row:last-child { border-bottom: none; }
+
+    .ba-op {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg2);
+    }
+
+    .ba-val {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .ba-val.bad  { color: var(--red); }
+    .ba-val.good { color: var(--green); }
+
+    .pct-tag {
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 980px;
+      background: rgba(48,209,88,0.1);
+      color: var(--green);
+      border: 1px solid rgba(48,209,88,0.16);
+      letter-spacing: 0.01em;
+    }
+
+    /* ━━━━ TERMINAL ━━━━ */
+    .term {
+      margin-top: 32px;
+      background: #050505;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .term-chrome {
+      display: flex;
+      align-items: center;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      gap: 6px;
+    }
+
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dr { background: rgba(255,90,80,0.5); }
+    .dy { background: rgba(255,190,50,0.5); }
+    .dg { background: rgba(50,200,100,0.5); }
+
+    .term-name {
+      margin: 0 auto;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg4);
+      letter-spacing: 0.04em;
+    }
+
+    .term-body {
+      padding: 24px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 2;
+    }
+
+    .t-prompt { color: var(--blue); }
+    .t-cmd    { color: #fff; }
+    .t-ok     { color: var(--green); }
+    .t-out    { color: rgba(255,255,255,0.45); }
+    .t-hl     { color: var(--amber); }
+    .t-dim    { color: rgba(255,255,255,0.2); }
+
+    /* ━━━━ FEATURE GRID ━━━━ */
+    .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      gap: 2px;
+      margin-top: 56px;
+    }
+
+    .feat {
+      background: #0a0a0a;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      transition: background 0.25s var(--ease), border-color 0.25s var(--ease);
+    }
+
+    .feat:hover {
+      background: #111;
+      border-color: rgba(255,255,255,0.14);
+    }
+
+    .feat-n {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--fg4);
+      letter-spacing: 0.06em;
+      margin-bottom: 20px;
+    }
+
+    .feat h3 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      color: #fff;
+      line-height: 1.3;
+    }
+
+    .feat p {
+      font-size: 14px;
+      color: var(--fg2);
+      line-height: 1.65;
+      letter-spacing: -0.005em;
+    }
+
+    /* ━━━━ COMMANDS ━━━━ */
+    .cmd-grid {
+      margin-top: 56px;
+      background: #0a0a0a;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .cmd {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.2s;
+    }
+
+    .cmd:last-child { border-bottom: none; }
+    .cmd:hover { background: rgba(255,255,255,0.03); }
+
+    .cmd-k {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+      min-width: 210px;
+      flex-shrink: 0;
+    }
+
+    .cmd-v {
+      font-size: 14px;
+      color: var(--fg2);
+      letter-spacing: -0.01em;
+    }
+
+    /* ━━━━ CTA ━━━━ */
+    .cta {
+      text-align: center;
+      padding: 128px 24px;
+      border-top: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-light {
+      position: absolute;
+      width: 700px; height: 400px;
+      background: radial-gradient(ellipse, rgba(10,132,255,0.08) 0%, transparent 65%);
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    .cta h2 {
+      font-size: clamp(52px, 8vw, 96px);
+      font-weight: 700;
+      letter-spacing: -0.045em;
+      line-height: 0.95;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .cta p {
+      font-size: 19px;
+      color: var(--fg2);
+      letter-spacing: -0.015em;
+      margin-bottom: 48px;
+      position: relative;
+    }
+
+    /* ━━━━ FOOTER ━━━━ */
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 48px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--fg3);
+      letter-spacing: -0.01em;
+    }
+
+    footer a { color: var(--fg3); text-decoration: none; transition: color 0.15s; }
+    footer a:hover { color: var(--fg2); }
+    footer .fl { display: flex; gap: 20px; }
+
+    /* ━━━━ DIVIDER ━━━━ */
+    .hr { border: none; border-top: 1px solid var(--border); }
+
+    /* ━━━━ REVEAL ━━━━ */
+    .r {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.8s var(--ease), transform 0.8s var(--ease);
+    }
+    .r.on { opacity: 1; transform: none; }
+    .r.d1 { transition-delay: 0.1s; }
+    .r.d2 { transition-delay: 0.2s; }
+    .r.d3 { transition-delay: 0.3s; }
+
+    /* ━━━━ MOBILE ━━━━ */
+    @media (max-width: 740px) {
+      .nav-links { display: none; }
+      .stats { grid-template-columns: 1fr; }
+      .stat { border-right: none; border-bottom: 1px solid var(--border); }
+      .stat:last-child { border-bottom: none; }
+      .s { padding: 72px 24px; }
+      .ba { grid-template-columns: 1fr; }
+      .feat-grid { grid-template-columns: 1fr; }
+      footer { padding: 20px 24px; flex-direction: column; gap: 12px; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="logo" href="#">Pith</a>
+  <ul class="nav-links">
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#commands">Commands</a></li>
+  </ul>
+  <a class="btn-nav" href="https://github.com/abhisekjha/pith" target="_blank">Install free</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-mesh">
+    <div class="mesh-orb m1"></div>
+    <div class="mesh-orb m2"></div>
+    <div class="mesh-orb m3"></div>
+  </div>
+
+  <div class="hero-inner">
+    <div class="hero-eyebrow r on">
+      <div class="eyebrow-dot"></div>
+      Token optimization for Claude Code
+    </div>
+
+    <h1 class="r on d1">
+      <span class="h1-a">fewer tokens.</span>
+      <span class="h1-b">same result.</span>
+    </h1>
+
+    <p class="hero-sub r on d2">
+      40–60% token reduction, automatic. Install once — works in every Claude Code project from that point on.
+    </p>
+
+    <div class="install-wrap r on d3">
+      <div class="install-box">
+        <span class="install-ps">$</span>
+        <code class="install-code">bash &lt;(curl -s https://raw.githubusercontent.com/abhisekjha/pith/main/install.sh)</code>
+        <button class="install-copy" onclick="cp(this)">Copy</button>
+      </div>
+      <a class="gh-link" href="https://github.com/abhisekjha/pith" target="_blank">View on GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<div class="stats r">
+  <div class="stat">
+    <div class="stat-n" id="c1">0%</div>
+    <div class="stat-l">token reduction on<br>large file reads</div>
+  </div>
+  <div class="stat">
+    <div class="stat-n">0</div>
+    <div class="stat-l">config required<br>to get started</div>
+  </div>
+  <div class="stat">
+    <div class="stat-n">∞</div>
+    <div class="stat-l">session length<br>with auto-compact</div>
+  </div>
+</div>
+
+<hr class="hr" />
+
+<!-- HOW IT WORKS -->
+<div class="s r" id="how">
+  <div class="s-eye">How it works</div>
+  <h2 class="s-h">Automatic compression<br>where it matters most.</h2>
+  <p class="s-p">The biggest token sink isn't your prompts — it's tool output. Pith intercepts file reads, bash results, and grep matches. Claude gets the signal, not the scroll.</p>
+
+  <div class="ba">
+    <div class="ba-card">
+      <div class="ba-top">
+        <span class="ba-tag bad">Without Pith</span>
+        <span class="ba-pill bad">3,110 tokens</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Read large-service.ts</span><span class="ba-val bad">1,800</span></div>
+      <div class="ba-row"><span class="ba-op">Bash: npm install</span><span class="ba-val bad">640</span></div>
+      <div class="ba-row"><span class="ba-op">Grep: findAll errors</span><span class="ba-val bad">380</span></div>
+      <div class="ba-row"><span class="ba-op">Read config.json</span><span class="ba-val bad">290</span></div>
+    </div>
+
+    <div class="ba-card is-after">
+      <div class="ba-top">
+        <span class="ba-tag good">With Pith</span>
+        <span class="ba-pill good">675 tokens &mdash; −78%</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Read large-service.ts</span><span class="ba-val good">210 <span class="pct-tag">−88%</span></span></div>
+      <div class="ba-row"><span class="ba-op">Bash: npm install</span><span class="ba-val good">80 <span class="pct-tag">−87%</span></span></div>
+      <div class="ba-row"><span class="ba-op">Grep: findAll errors</span><span class="ba-val good">95 <span class="pct-tag">−75%</span></span></div>
+      <div class="ba-row"><span class="ba-op">Read config.json</span><span class="ba-val good">290</span></div>
+    </div>
+  </div>
+
+  <div class="term r">
+    <div class="term-chrome">
+      <div class="dot dr"></div>
+      <div class="dot dy"></div>
+      <div class="dot dg"></div>
+      <span class="term-name">claude — pith active</span>
+    </div>
+    <div class="term-body">
+      <div><span class="t-prompt">$</span> <span class="t-cmd">/pith ultra</span></div>
+      <div><span class="t-ok">✓</span> <span class="t-out">Ultra compression on — arrows →, tables over prose, abbreviate freely</span></div>
+      <br>
+      <div><span class="t-prompt">$</span> <span class="t-cmd">/pith wiki "how does auth work?"</span></div>
+      <div><span class="t-ok">→</span> <span class="t-out">Auth: JWT + refresh tokens, httpOnly cookie. Middleware: <span class="t-hl">src/middleware/auth.ts</span></span></div>
+      <div>&nbsp;&nbsp;<span class="t-out">Decision: cookies &gt; localStorage (XSS). Adopted 2024-11.</span></div>
+      <br>
+      <div><span class="t-prompt">$</span> <span class="t-cmd">/budget 150</span></div>
+      <div><span class="t-ok">✓</span> <span class="t-out">Token ceiling: 150. Enforced.</span></div>
+      <br>
+      <div><span class="t-dim">● PITH:ULTRA &nbsp; 14k / 200k &nbsp; ▓▓░░░░░░░░░░░░░░░░░░</span></div>
+    </div>
+  </div>
+</div>
+
+<hr class="hr" />
+
+<!-- FEATURES -->
+<div class="s r" id="features">
+  <div class="s-eye">Features</div>
+  <h2 class="s-h">Everything automatic.<br>Nothing in the way.</h2>
+  <p class="s-p">Zero-config defaults that work from install. On-demand commands when you want more control. Nothing in between.</p>
+
+  <div class="feat-grid">
+    <div class="feat">
+      <div class="feat-n">01</div>
+      <h3>Tool output compression</h3>
+      <p>File reads become skeletons — imports, signatures, types. Bash returns errors and summary. Grep caps at 25 matches. Automatic, always on.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">02</div>
+      <h3>Live token meter</h3>
+      <p>Exact context window usage in the status line — mode-aware, always visible. Know where you stand before you hit the wall.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">03</div>
+      <h3>Auto-compact at 70%</h3>
+      <p>History is summarized automatically before the window fills. Sessions run indefinitely. No more "context limit reached" mid-task.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">04</div>
+      <h3>Project wiki</h3>
+      <p>First session in a new project, Pith builds a wiki. Decisions, architecture, entities — it writes itself as you work. Searchable anytime.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">05</div>
+      <h3>Output modes</h3>
+      <p>Lean for everyday work. Precise for docs and PRs. Ultra when every token counts. Switch with a single command.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">06</div>
+      <h3>Token budgets</h3>
+      <p>Hard ceilings that Pith enforces — Claude won't exceed the limit without warning you first. Full cost control, no babysitting.</p>
+    </div>
+  </div>
+</div>
+
+<hr class="hr" />
+
+<!-- COMMANDS -->
+<div class="s r" id="commands">
+  <div class="s-eye">Commands</div>
+  <h2 class="s-h">Type it.<br>Done.</h2>
+  <p class="s-p">Every command works inside any Claude Code session — no flags, no setup, no config files.</p>
+
+  <div class="cmd-grid">
+    <div class="cmd"><span class="cmd-k">/pith lean</span><span class="cmd-v">Drop articles, short synonyms, fragments OK — tightest default</span></div>
+    <div class="cmd"><span class="cmd-k">/pith precise</span><span class="cmd-v">Professional and tight — no filler, full sentences kept</span></div>
+    <div class="cmd"><span class="cmd-k">/pith ultra</span><span class="cmd-v">Maximum compression — arrows →, tables over prose, abbreviate freely</span></div>
+    <div class="cmd"><span class="cmd-k">/pith off</span><span class="cmd-v">Back to normal Claude output, no compression</span></div>
+    <div class="cmd"><span class="cmd-k">/pith debug</span><span class="cmd-v">Structured debug: hypothesis → test → result</span></div>
+    <div class="cmd"><span class="cmd-k">/pith review</span><span class="cmd-v">Code review: issues → suggestions → verdict</span></div>
+    <div class="cmd"><span class="cmd-k">/pith arch</span><span class="cmd-v">Architecture: context → decision → trade-offs</span></div>
+    <div class="cmd"><span class="cmd-k">/pith wiki "&lt;question&gt;"</span><span class="cmd-v">Search the project wiki</span></div>
+    <div class="cmd"><span class="cmd-k">/pith ingest &lt;file&gt;</span><span class="cmd-v">Add a source doc or spec to the wiki</span></div>
+    <div class="cmd"><span class="cmd-k">/pith status</span><span class="cmd-v">Token usage breakdown for this session</span></div>
+    <div class="cmd"><span class="cmd-k">/budget &lt;N&gt;</span><span class="cmd-v">Hard token ceiling — enforced, not suggested</span></div>
+    <div class="cmd"><span class="cmd-k">/pith commit</span><span class="cmd-v">Commit format: summary → changes → why</span></div>
+  </div>
+</div>
+
+<!-- CTA -->
+<div class="cta r">
+  <div class="cta-light"></div>
+  <h2>Install once.<br>Save forever.</h2>
+  <p>One command. Works in every Claude Code project from that point on.</p>
+  <div class="install-box" style="display:inline-flex; position:relative;">
+    <span class="install-ps">$</span>
+    <code class="install-code">bash &lt;(curl -s https://raw.githubusercontent.com/abhisekjha/pith/main/install.sh)</code>
+    <button class="install-copy" onclick="cp(this)">Copy</button>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <span>Pith — token optimization for Claude Code</span>
+  <div class="fl">
+    <a href="https://github.com/abhisekjha/pith" target="_blank">GitHub</a>
+    <a href="https://github.com/abhisekjha/pith/blob/main/README.md" target="_blank">Docs</a>
+    <a href="https://github.com/abhisekjha/pith/issues" target="_blank">Issues</a>
+  </div>
+</footer>
+
+<script>
+  // Copy
+  function cp(btn) {
+    navigator.clipboard.writeText('bash <(curl -s https://raw.githubusercontent.com/abhisekjha/pith/main/install.sh)').then(() => {
+      const o = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.style.color = 'var(--green)';
+      setTimeout(() => { btn.textContent = o; btn.style.color = ''; }, 2000);
+    });
+  }
+
+  // Scroll reveal
+  const io = new IntersectionObserver(
+    es => es.forEach(e => { if(e.isIntersecting) { e.target.classList.add('on'); io.unobserve(e.target); } }),
+    { threshold: 0.06, rootMargin: '0px 0px -40px 0px' }
+  );
+  document.querySelectorAll('.r:not(.on)').forEach(el => io.observe(el));
+
+  // Counter animation
+  function animCount(el, end, suffix, dur) {
+    let start = null;
+    const step = ts => {
+      if (!start) start = ts;
+      const p = Math.min((ts - start) / dur, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(ease * end) + suffix;
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  const statsEl = document.querySelector('.stats');
+  const c1 = document.getElementById('c1');
+  let counted = false;
+  const sio = new IntersectionObserver(es => {
+    if (es[0].isIntersecting && !counted) {
+      counted = true;
+      animCount(c1, 88, '%', 1400);
+    }
+  }, { threshold: 0.4 });
+  sio.observe(statsEl);
+</script>
+</body>
+</html>
