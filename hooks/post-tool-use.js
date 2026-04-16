@@ -244,14 +244,60 @@ function compressJSON(content, lines, filePath) {
         devDependencies: Object.keys(obj.devDependencies || {}).slice(0, 15),
         _pith: `[${Object.keys(obj.dependencies||{}).length} deps · ${Object.keys(obj.devDependencies||{}).length} devDeps]`,
       };
-      return `[PITH: ${name} summary]\n${JSON.stringify(out, null, 2)}`;
+      return `[PITH TOON: ${name} summary]\n${toTOON(out)}`;
     }
-    return `[PITH SCHEMA: ${name} — ${lines.length} lines]\n${schemaOf(obj, 0)}\n[Ask for full content or specific keys]`;
+    return `[PITH TOON: ${name} — ${lines.length} lines]\n${toTOON(obj)}\n[Ask for full content or specific keys]`;
   } catch (e) {
     return headTail(lines, filePath, 20, 10);
   }
 }
 
+// ── TOON serializer (Token-Oriented Object Notation) ─────────────────────────
+// Spec: github.com/toon-format/toon — ~40% fewer tokens than JSON
+// Rules: key=value pairs, semicolons between siblings, tabular arrays
+function toTOON(obj, depth = 0) {
+  if (obj === null || obj === undefined) return 'null';
+  if (typeof obj !== 'object') return String(obj);
+
+  const pad = '  '.repeat(depth);
+
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) return '[]';
+    // Tabular format for arrays of objects — header row + value rows
+    if (obj.length > 1 && obj[0] && typeof obj[0] === 'object' && !Array.isArray(obj[0])) {
+      const keys  = Object.keys(obj[0]);
+      const shown = obj.slice(0, 20);
+      const rows  = shown.map(item =>
+        keys.map(k => {
+          const v = item[k];
+          return (v === null || v === undefined) ? '' :
+                 (typeof v === 'object') ? '{…}' : String(v);
+        }).join(',')
+      );
+      const tail = obj.length > 20 ? `\n${pad}  …${obj.length - 20} more` : '';
+      return `[${obj.length}]{${keys.join(',')}}\n` +
+             rows.map(r => `${pad}  ${r}`).join('\n') + tail;
+    }
+    // Simple array — semicolon-delimited
+    const items = obj.slice(0, 30).map(v => toTOON(v, depth + 1));
+    const tail  = obj.length > 30 ? `;…${obj.length - 30} more` : '';
+    return items.join(';') + tail;
+  }
+
+  // Object — key=value, newline between entries when nested
+  const entries = Object.entries(obj).slice(0, 20);
+  const pairs   = entries.map(([k, v]) => {
+    if (v === null || v === undefined) return `${pad}${k}=null`;
+    if (typeof v !== 'object')         return `${pad}${k}=${v}`;
+    if (Array.isArray(v) && v.length === 0) return `${pad}${k}=[]`;
+    return `${pad}${k}:\n${toTOON(v, depth + 1)}`;
+  });
+  if (Object.keys(obj).length > 20)
+    pairs.push(`${pad}…${Object.keys(obj).length - 20} more keys`);
+  return pairs.join('\n');
+}
+
+// Legacy — kept for internal use only (schemaOf was used nowhere else)
 function schemaOf(obj, depth) {
   if (depth > 3) return '...';
   if (obj === null) return 'null';
