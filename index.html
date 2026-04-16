@@ -438,6 +438,7 @@
   <ul class="nav-links">
     <li><a href="#compression">Compression</a></li>
     <li><a href="#layers">Layers</a></li>
+    <li><a href="#adaptive">Adaptive</a></li>
     <li><a href="#wiki">Wiki</a></li>
     <li><a href="#graph">Graph</a></li>
     <li><a href="#provenance">Provenance</a></li>
@@ -468,14 +469,16 @@
     </h1>
 
     <p class="hero-sub r on d2">
-      40–60% token reduction, automatic. Project wiki. Interactive knowledge graph. Install once — works in every Claude Code project from that point on.
+      40–70% token reduction, automatic. Auto-escalation. Hindsight pruning. Symbol extraction. Project wiki. Interactive knowledge graph. Install once — every project, forever.
     </p>
 
     <div class="hero-badges r on d2">
       <span class="badge badge-blue">Token compression</span>
       <span class="badge badge-green">Project wiki</span>
-      <span class="badge badge-violet">Knowledge graph</span>
+      <span class="badge badge-violet">Auto-escalation</span>
       <span class="badge badge-amber">YAML provenance</span>
+      <span class="badge" style="color:var(--emerald);border-color:rgba(52,211,153,0.25);background:rgba(52,211,153,0.08)">Session reports</span>
+      <span class="badge" style="color:var(--indigo);border-color:rgba(129,140,248,0.25);background:rgba(129,140,248,0.08)">Symbol extraction</span>
     </div>
 
     <div class="install-wrap r on d3">
@@ -510,8 +513,8 @@
     <div class="stat-l">session length<br>with auto-compact</div>
   </div>
   <div class="stat">
-    <div class="stat-n" id="c4">0</div>
-    <div class="stat-l">wiki page types<br>auto-maintained</div>
+    <div class="stat-n" style="color:var(--violet)">19</div>
+    <div class="stat-l">features shipped<br>across 10 research phases</div>
   </div>
 </div>
 
@@ -533,6 +536,9 @@
       <div class="ba-row"><span class="ba-op">Token meter + statusline</span><span class="ba-val" style="color:var(--blue)">Every session</span></div>
       <div class="ba-row"><span class="ba-op">Tool output compression</span><span class="ba-val" style="color:var(--blue)">File / bash / grep</span></div>
       <div class="ba-row"><span class="ba-op">Auto-compact at 70%</span><span class="ba-val" style="color:var(--blue)">Automatic</span></div>
+      <div class="ba-row"><span class="ba-op">Auto-escalation (SWEzze)</span><span class="ba-val" style="color:var(--blue)">LEAN at 50% · ULTRA at 70%</span></div>
+      <div class="ba-row"><span class="ba-op">Hindsight pruning</span><span class="ba-val" style="color:var(--blue)">Nudges at 60% fill</span></div>
+      <div class="ba-row"><span class="ba-op">Cache-lock deduplication</span><span class="ba-val" style="color:var(--blue)">Saves ~300 tok/session</span></div>
       <div class="ba-row"><span class="ba-op">Wiki system</span><span class="ba-val" style="color:var(--blue)">Ingest / query / lint</span></div>
       <div class="ba-row"><span class="ba-op">Session state saving</span><span class="ba-val" style="color:var(--blue)">On every exit</span></div>
       <div class="ba-row"><span class="ba-op">YAML provenance tracking</span><span class="ba-val" style="color:var(--blue)">All wiki writes</span></div>
@@ -684,6 +690,116 @@
         <div class="ex-in">IN: any prompt</div>
         <div class="ex-out">OUT: unmodified Claude response</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<hr class="hr" />
+
+<!-- ━━━━━━━━━━━━━━━━━━━━ ADAPTIVE INTELLIGENCE ━━━━━━━━━━━━━━━━━━━━ -->
+<div class="s r" id="adaptive">
+  <div class="s-eye violet">Adaptive Intelligence</div>
+  <h2 class="s-h">Context-aware.<br>Gets smarter as it fills.</h2>
+  <p class="s-p">Pith watches your context window in real time and takes action before it causes problems — automatically ratcheting compression, flagging waste, and front-loading what future requests will need.</p>
+
+  <!-- Auto-escalation -->
+  <div class="ba" style="margin-top:56px">
+    <div class="ba-card" style="border-color:rgba(191,90,242,0.15)">
+      <div class="ba-top">
+        <span class="ba-tag" style="color:var(--violet)">Auto-escalation &nbsp;<span style="font-weight:400;opacity:0.5;font-size:10px">SWEzze · arXiv:2603.28119</span></span>
+        <span class="ba-pill" style="background:rgba(191,90,242,0.1);color:var(--violet);border:1px solid rgba(191,90,242,0.2)">Always on</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">50% context fill</span><span class="ba-val" style="color:var(--violet)">→ LEAN mode activated</span></div>
+      <div class="ba-row"><span class="ba-op">70% context fill</span><span class="ba-val" style="color:var(--violet)">→ ULTRA mode activated</span></div>
+      <div class="ba-row"><span class="ba-op">85% context fill</span><span class="ba-val" style="color:var(--red)">→ Dynamic ceiling injected</span></div>
+      <div class="ba-row" style="border-bottom:none"><span class="ba-op" style="color:var(--fg4);font-size:11px">Ratchets up, never down mid-session. Prevents runaway responses from eating the remaining headroom. Toggle with /pith escalate on|off.</span></div>
+    </div>
+    <div class="ba-card is-after">
+      <div class="ba-top">
+        <span class="ba-tag good">Before / After</span>
+        <span class="ba-pill good">68% fill — auto-escalated</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Context fill</span><span class="ba-val bad">136k / 200k</span></div>
+      <div class="ba-row"><span class="ba-op">Response size (before)</span><span class="ba-val bad">1,840 tok — growing</span></div>
+      <div class="ba-row"><span class="ba-op">Mode injected</span><span class="ba-val good">ULTRA (auto)</span></div>
+      <div class="ba-row" style="border-bottom:none"><span class="ba-op">Response size (after)</span><span class="ba-val good" style="color:var(--emerald)">510 tok <span class="pct-tag">-72%</span></span></div>
+    </div>
+  </div>
+
+  <!-- Hindsight + Symbol extractor side by side -->
+  <div class="ba" style="margin-top:2px">
+    <div class="ba-card" style="border-color:rgba(255,214,10,0.12)">
+      <div class="ba-top">
+        <span class="ba-tag" style="color:var(--amber)">Hindsight pruning &nbsp;<span style="font-weight:400;opacity:0.5;font-size:10px">Hindsight · 2026</span></span>
+        <span class="ba-pill" style="background:rgba(255,214,10,0.1);color:var(--amber);border:1px solid rgba(255,214,10,0.2)">60% trigger</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Scan telemetry</span><span class="ba-val" style="color:var(--amber)">Every tool call logged</span></div>
+      <div class="ba-row"><span class="ba-op">Superseded reads</span><span class="ba-val" style="color:var(--amber)">File read 2+ times → flag</span></div>
+      <div class="ba-row"><span class="ba-op">Early-session blobs</span><span class="ba-val" style="color:var(--amber)">Large old outputs → prune</span></div>
+      <div class="ba-row" style="border-bottom:none"><span class="ba-op" style="color:var(--fg4);font-size:11px">Fires once per session when context passes 60%. Reports stale token cost. Recommends /compact with exact savings estimate.</span></div>
+    </div>
+    <div class="ba-card" style="border-color:rgba(129,140,248,0.12)">
+      <div class="ba-top">
+        <span class="ba-tag" style="color:var(--indigo)">Symbol extractor + Speculative Fetch</span>
+        <span class="ba-pill" style="background:rgba(129,140,248,0.1);color:var(--indigo);border:1px solid rgba(129,140,248,0.2)">~95% reduction</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Full file read</span><span class="ba-val bad">1,800 tokens</span></div>
+      <div class="ba-row"><span class="ba-op">/pith symbol auth.ts handleLogin</span><span class="ba-val good">38 tokens <span class="pct-tag">-98%</span></span></div>
+      <div class="ba-row"><span class="ba-op">Speculative fetch</span><span class="ba-val" style="color:var(--indigo)">+callee signatures auto-appended</span></div>
+      <div class="ba-row" style="border-bottom:none"><span class="ba-op" style="color:var(--fg4);font-size:11px">Tree-sitter AST when available, regex fallback. Appends signatures of called functions defined in the same file — eliminates ~60% of follow-up lookups.</span></div>
+    </div>
+  </div>
+
+  <!-- Terminal demo: auto-escalation in action -->
+  <div class="term r" style="margin-top:48px">
+    <div class="term-chrome">
+      <div class="dot dr"></div><div class="dot dy"></div><div class="dot dg"></div>
+      <span class="term-name">adaptive intelligence · live session</span>
+    </div>
+    <div class="term-body">
+      <div><span class="t-dim">── turn 24 · context fill: 52% ──────────────────────</span></div>
+      <div><span class="t-violet">[PITH AUTO-ESCALATED: context 52% full → LEAN compression active.</span></div>
+      <div><span class="t-violet"> Previous mode: off. Run /pith escalate off to disable.]</span></div>
+      <div>&nbsp;</div>
+      <div><span class="t-dim">── turn 31 · context fill: 71% ──────────────────────</span></div>
+      <div><span class="t-violet">[PITH AUTO-ESCALATED: context 71% full → ULTRA compression active.]</span></div>
+      <div>&nbsp;</div>
+      <div><span class="t-dim">── turn 33 · hindsight nudge (fires once at 60%+) ───</span></div>
+      <div><span class="t-amber">[PITH HINDSIGHT: 3 stale reads detected · 4,200 tokens recoverable</span></div>
+      <div><span class="t-amber">  auth.ts read 3× (keep latest: turn 29) · 1,840 tok</span></div>
+      <div><span class="t-amber">  npm install output (turn 2, now irrelevant) · 1,120 tok</span></div>
+      <div><span class="t-amber">  → Run /compact to recover ~4.2k tokens (21% of remaining headroom)]</span></div>
+      <div>&nbsp;</div>
+      <div><span class="t-prompt">$</span> <span class="t-cmd">/pith symbol src/auth.ts validateToken</span></div>
+      <div><span class="t-indigo">[PITH SYMBOL: validateToken in auth.ts (lines 47–81, tree-sitter)]</span></div>
+      <div><span class="t-out">  47  async function validateToken(token: string): Promise&lt;User | null&gt; {</span></div>
+      <div><span class="t-out">  48    const decoded = jwt.verify(token, process.env.JWT_SECRET);</span></div>
+      <div><span class="t-out">  ···  (35 lines extracted · 97% fewer tokens than reading auth.ts)</span></div>
+      <div><span class="t-dim">[PITH SPECULATIVE: called functions in same file → signToken (ln 31), hashPassword (ln 94)]</span></div>
+    </div>
+  </div>
+
+  <!-- Cache-lock + Report -->
+  <div class="ba" style="margin-top:2px">
+    <div class="ba-card" style="border-color:rgba(48,209,88,0.12)">
+      <div class="ba-top">
+        <span class="ba-tag" style="color:var(--green)">Cache-Lock &nbsp;<span style="font-weight:400;opacity:0.5;font-size:10px">Phase 9 · 2026</span></span>
+        <span class="ba-pill good">~300 tok/session</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Session-start hash</span><span class="ba-val" style="color:var(--green)">MD5 of rules block</span></div>
+      <div class="ba-row"><span class="ba-op">Same settings as last session</span><span class="ba-val good">1 line emitted, not full block</span></div>
+      <div class="ba-row"><span class="ba-op">Settings changed</span><span class="ba-val" style="color:var(--fg3)">Full block, hash updated</span></div>
+      <div class="ba-row" style="border-bottom:none"><span class="ba-op" style="color:var(--fg4);font-size:11px">Protects prompt cache. Dynamic values (token counts, timestamps) are excluded from the hash so cache hits are genuine stability signals.</span></div>
+    </div>
+    <div class="ba-card" style="border-color:rgba(10,132,255,0.12)">
+      <div class="ba-top">
+        <span class="ba-tag" style="color:var(--blue)">Session Report &nbsp;<span style="font-weight:400;opacity:0.5;font-size:10px">/pith report</span></span>
+        <span class="ba-pill" style="background:rgba(10,132,255,0.1);color:var(--blue);border:1px solid rgba(10,132,255,0.2)">HTML dashboard</span>
+      </div>
+      <div class="ba-row"><span class="ba-op">Token flow bars</span><span class="ba-val" style="color:var(--blue)">Baseline → removed → sent</span></div>
+      <div class="ba-row"><span class="ba-op">Savings donut</span><span class="ba-val" style="color:var(--blue)">Per-bucket breakdown</span></div>
+      <div class="ba-row"><span class="ba-op">Cost table</span><span class="ba-val" style="color:var(--blue)">Actual vs without Pith</span></div>
+      <div class="ba-row" style="border-bottom:none"><span class="ba-op" style="color:var(--fg4);font-size:11px">Standalone Chart.js dashboard written to ~/.pith/report.html. Opens in browser. Run any time — refreshes to current session data.</span></div>
     </div>
   </div>
 </div>
@@ -1253,6 +1369,7 @@
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith focus &lt;file&gt;</span></span><span class="cmd-v">Focus context on a specific file for the current task</span><span class="cmd-new">New</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith recall</span></span><span class="cmd-v">Restore last session's mode, wiki, and budget mid-session — one line confirm</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith configure</span></span><span class="cmd-v">Interactive config wizard — mode → wiki → budget → auto-compact, one question at a time</span></div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith reset-cache</span></span><span class="cmd-v">Force full session-start injection next session — clears the cache-lock hash</span><span class="cmd-new">New</span></div>
     </div>
 
     <div class="cmd-grid" style="margin-top:2px">
