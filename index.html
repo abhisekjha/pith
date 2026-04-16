@@ -1090,6 +1090,11 @@
       <p>Tool outputs that exceed 300 tokens after compression are automatically written to <code style="font-family:var(--mono);font-size:11px">~/.pith/tmp/</code> and replaced with a 3-line pointer in context. Claude can read them on demand — nothing is lost, but large payloads never bloat the context window. Offloaded bytes tracked in <code style="font-family:var(--mono);font-size:11px">/pith status</code>.</p>
     </div>
     <div class="feat">
+      <div class="feat-n">16</div>
+      <h3>Hindsight pruning <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">Hindsight · 2026</span></h3>
+      <p>Scans the session's tool call telemetry for stale context: files read multiple times (only the latest matters), large bash outputs from early-session setup steps, results that are now irrelevant. Reports total stale token cost and recommends <code style="font-family:var(--mono);font-size:11px">/compact</code>. Fires automatically once when context passes 60%.</p>
+    </div>
+    <div class="feat">
       <div class="feat-n">15</div>
       <h3>Auto-escalation <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">SWEzze · arXiv:2603.28119</span></h3>
       <p>As context fills, Pith automatically ratchets the output mode up — switching to <strong>LEAN</strong> at 50% and <strong>ULTRA</strong> at 70%. At 85%, a dynamic response ceiling is injected equal to 8% of remaining headroom. Claude's responses stop growing the context window unchecked. Toggle with <code style="font-family:var(--mono);font-size:11px">/pith escalate on|off</code>.</p>
@@ -1224,6 +1229,7 @@
     <div class="cmd-grid" style="margin-top:2px">
       <div class="cmd-group-label">Session control</div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith status</span></span><span class="cmd-v">Token usage, cost, and per-format savings breakdown — TOON, skeletons, bash, style</span></div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith hindsight</span></span><span class="cmd-v">Identify stale tool results consuming context — shows token cost, recommends /compact</span><span class="cmd-new">New</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith escalate</span></span><span class="cmd-v">Show auto-escalation status — context fill thresholds and current mode</span><span class="cmd-new">New</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith escalate on|off</span></span><span class="cmd-v">Enable or disable SWEzze auto-escalation (LEAN at 50%, ULTRA at 70%)</span><span class="cmd-new">New</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith budget &lt;N&gt;</span></span><span class="cmd-v">Set a hard token ceiling — enforced, not suggested</span><span class="cmd-new">New</span></div>

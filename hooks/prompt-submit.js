@@ -172,6 +172,7 @@ process.stdin.on('end', () => {
 
 ── Session & Config ────────────────────────────────────────────
   /pith status           Token usage health report
+  /pith hindsight        Identify stale tool results consuming context — recommends /compact
   /pith escalate         Show auto-escalation status and thresholds
   /pith escalate on|off  Enable/disable SWEzze auto-escalation
   /pith recall           Restore last session's mode/wiki/budget
@@ -265,6 +266,12 @@ Display this reference any time with: /pith help`
             `    /pith grepai enable — restore nudge`
           );
         }
+
+      } else if (arg === 'hindsight') {
+        // /pith hindsight — retrospective stale context analysis
+        out.push(runTool('hindsight.py', [], root));
+        // Mark as shown so the auto-nudge doesn't fire this turn
+        saveProjectState({ hindsight_nudged: true });
 
       } else if (arg === 'escalate') {
         // /pith escalate on|off — toggle SWEzze auto-escalation
@@ -390,6 +397,21 @@ Display this reference any time with: /pith help`
         `safe to ignore unless you need them:\n${list}\n` +
         `Use Read("<path>") from the PITH OFFLOAD notice to access if needed]`
       );
+    }
+
+    // ── Hindsight auto-nudge ──────────────────────────────────────────────
+    // Once per session when context fill > 60%: run hindsight --nudge.
+    // Only fires once (hindsight_nudged flag), not on /pith commands.
+    {
+      const hn_proj = loadProjectState();
+      const fill    = (hn_proj.input_tokens_est || 0) / (config.context_limit || 200000);
+      if (!hn_proj.hindsight_nudged && fill > 0.60 && !lower.startsWith('/pith')) {
+        const nudge = runTool('hindsight.py', ['--nudge'], root);
+        if (nudge) {
+          out.push(nudge);
+          saveProjectState({ hindsight_nudged: true });
+        }
+      }
     }
 
     if (out.length) process.stdout.write(out.filter(Boolean).join('\n\n'));
