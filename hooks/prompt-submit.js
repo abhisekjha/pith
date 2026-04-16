@@ -9,7 +9,8 @@ const { execSync } = require('child_process');
 const { loadConfig, loadProjectState, saveProjectState, pluginRoot } = require('./config');
 
 const OUTPUT_MODES = new Set(['lean', 'precise', 'ultra', 'off']);
-const SKILL_CMDS   = new Set(['debug', 'review', 'arch', 'plan', 'commit']); // handled by skill system
+// Subcommands handled entirely by Claude Code skill files — hook just skips them
+const SKILL_CMDS   = new Set(['debug', 'review', 'arch', 'plan', 'commit', 'install', 'uninstall']);
 
 let raw = '';
 process.stdin.on('data', c => { raw += c; });
@@ -45,12 +46,24 @@ process.stdin.on('end', () => {
           // /pith wiki "question" — query the wiki
           out.push(wikiQuery(rest, root));
         } else {
-          // /pith wiki — toggle wiki mode
-          const next = !proj.wiki_mode;
-          saveProjectState({ wiki_mode: next });
-          out.push(next
-            ? 'PITH WIKI MODE: active. I will maintain the project wiki as we work.\n\n' + wikiModeRules(root)
-            : 'PITH WIKI MODE: deactivated.');
+          // /pith wiki — toggle wiki mode.
+          // Debounce: UserPromptSubmit hook fires before the slash command
+          // re-calls this script.  If the toggle happened within the last 2s,
+          // skip re-toggling and just echo current state.
+          const now = Date.now();
+          const lastToggle = proj._wiki_toggle_ms || 0;
+          if (now - lastToggle < 2000) {
+            // Already toggled — confirm state without mutating
+            out.push(proj.wiki_mode
+              ? 'PITH WIKI MODE: active. I will maintain the project wiki as we work.\n\n' + wikiModeRules(root)
+              : 'PITH WIKI MODE: deactivated.');
+          } else {
+            const next = !proj.wiki_mode;
+            saveProjectState({ wiki_mode: next, _wiki_toggle_ms: now });
+            out.push(next
+              ? 'PITH WIKI MODE: active. I will maintain the project wiki as we work.\n\n' + wikiModeRules(root)
+              : 'PITH WIKI MODE: deactivated.');
+          }
         }
 
       } else if (arg === 'ingest') {
@@ -63,10 +76,52 @@ process.stdin.on('end', () => {
         }
 
       } else if (arg === 'lint') {
-        out.push(runTool('wiki_lint.py', [], root));
+        // wiki_guard.py is the lint tool (not wiki_lint.py)
+        out.push(runTool('wiki_guard.py', [], root));
 
       } else if (arg === 'status') {
         out.push(runTool('health.py', [], root));
+
+      } else if (arg === 'recall') {
+        // /pith recall — restore last session's mode, wiki, and budget
+        const saved = { mode: proj.mode, wiki_mode: proj.wiki_mode, budget: proj.budget };
+        const parts2 = [];
+        if (saved.mode && saved.mode !== 'off') parts2.push(`mode=${saved.mode.toUpperCase()}`);
+        if (saved.wiki_mode) parts2.push('wiki=ON');
+        if (saved.budget)    parts2.push(`budget=${saved.budget}`);
+        if (parts2.length === 0) {
+          out.push('PITH RECALL: no saved state found for this project.');
+        } else {
+          const injections = [];
+          if (saved.mode && saved.mode !== 'off') injections.push(modeRules(saved.mode, root));
+          if (saved.wiki_mode) injections.push('PITH WIKI MODE: active. I will maintain the project wiki as we work.\n\n' + wikiModeRules(root));
+          if (saved.budget) injections.push(`HARD TOKEN LIMIT: ≤${saved.budget} tokens this response. Count as you write. Stop when done.`);
+          out.push(`PITH RECALL: restored ${parts2.join(', ')}.`);
+          injections.forEach(i => out.push(i));
+        }
+
+      } else if (arg === 'configure') {
+        // /pith configure — interactive config wizard
+        const cur = {
+          mode:         proj.mode || config.default_mode || 'off',
+          wiki:         proj.wiki_mode ? 'ON' : 'OFF',
+          budget:       proj.budget    ? String(proj.budget) : 'none',
+          autoCompact:  config.auto_compact ? 'ON' : 'OFF',
+        };
+        out.push(
+          `PITH CONFIGURE WIZARD\n\n` +
+          `Current settings:\n` +
+          `  mode         = ${cur.mode}\n` +
+          `  wiki mode    = ${cur.wiki}\n` +
+          `  token budget = ${cur.budget}\n` +
+          `  auto-compact = ${cur.autoCompact}\n\n` +
+          `Walk the user through each setting one at a time:\n` +
+          `1. Output mode? [lean / precise / ultra / off]\n` +
+          `2. Enable wiki mode? [yes / no]\n` +
+          `3. Token budget? [number or skip]\n` +
+          `4. Auto-compact at 70%? [yes / no]\n\n` +
+          `Apply each answer immediately via saveProjectState. End with a one-line summary.`
+        );
 
       } else if (arg === 'tour') {
         // /pith tour [step-number] — interactive guided tour
@@ -85,8 +140,8 @@ process.stdin.on('end', () => {
         out.push(optimizeCache(root));
 
       } else if (SKILL_CMDS.has(arg)) {
-        // /pith debug, /pith review, etc. — handled by Claude Code skill system
-        // Just track that a skill mode was requested (no injection needed)
+        // /pith debug, /pith review, /pith install, etc. — handled by Claude Code skill system
+        // No injection needed; skill file provides instructions.
       }
     }
 
@@ -121,11 +176,6 @@ process.stdin.on('end', () => {
     // ── Token estimate tracking ────────────────────────────────────────────
     const est = Math.ceil(prompt.length / 4);
     saveProjectState({ input_tokens_est: (proj.input_tokens_est || 0) + est });
-
-    // ── Mark setup done if user responded to onboarding ───────────────────
-    if (!proj.setup_done && prompt.length > 0) {
-      // Will be properly set by setup.py; for now just acknowledge first interaction
-    }
 
     if (out.length) process.stdout.write(out.filter(Boolean).join('\n\n'));
   } catch (e) { /* silent */ }
@@ -163,7 +213,6 @@ function wikiQuery(question, root) {
 }
 
 function optimizeCache(root) {
-  // Read CLAUDE.md and restructure for cache optimization
   try {
     const claudeMd = path.join(process.env.CLAUDE_CWD || process.cwd(), 'CLAUDE.md');
     if (!fs.existsSync(claudeMd)) return '[PITH: No CLAUDE.md found in current directory]';
