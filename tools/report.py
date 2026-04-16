@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Pith Session Report — generates a standalone HTML dashboard showing
-token flow, compression breakdown, and cost metrics for the current session.
+Pith Session Report — generates a polished standalone HTML dashboard.
 
 Writes to ~/.pith/report.html and opens it in the browser.
 Usage:  python3 report.py          # generate and open
@@ -20,8 +19,8 @@ STATE     = Path.home() / '.pith' / 'state.json'
 TELEMETRY = Path.home() / '.pith' / 'telemetry.jsonl'
 OUTPUT    = Path.home() / '.pith' / 'report.html'
 
-IN_COST_PER_M  = 3.0   # Sonnet 4.6 input  $/1M tokens
-OUT_COST_PER_M = 15.0  # Sonnet 4.6 output $/1M tokens
+IN_COST_PER_M  = 3.0
+OUT_COST_PER_M = 15.0
 
 
 def load_state() -> dict:
@@ -81,18 +80,15 @@ def generate_html(s: dict, events: list[dict]) -> str:
     saved_cost     = saved_in_cost + saved_out_cost
     would_cost     = actual_cost + saved_cost
 
-    comp_ratio = round(without / inp, 2) if inp > 0 else 1.0
-    roi        = round(saved_cost / actual_cost, 2) if actual_cost > 0.00001 else 0.0
+    comp_ratio = round(without / inp, 1) if inp > 0 else 1.0
+    roi        = round(saved_cost / actual_cost, 1) if actual_cost > 0.00001 else 0.0
 
-    # Per-event telemetry timeline (last 30)
     tel_labels = json.dumps([e.get('ts', '')[-8:-3] for e in events[-30:]])
     tel_saved  = json.dumps([e.get('before_tokens', 0) - e.get('after_tokens', 0) for e in events[-30:]])
     tel_after  = json.dumps([e.get('after_tokens', 0) for e in events[-30:]])
 
-    buckets_labels = json.dumps([
-        'Skeletons', 'Bash/build', 'Grep', 'TOON', 'Web', 'Offloaded', 'Output mode'
-    ])
-    buckets_data = json.dumps([skel_s, bash_s, grep_s, toon_s, web_s, offload_s, out_s])
+    buckets_labels = json.dumps(['Skeletons', 'Bash/build', 'Grep', 'TOON', 'Web', 'Offloaded', 'Output mode'])
+    buckets_data   = json.dumps([skel_s, bash_s, grep_s, toon_s, web_s, offload_s, out_s])
 
     def fc(n: float) -> str:
         return f'${n:.4f}' if n >= 0.0001 else '<$0.0001'
@@ -102,7 +98,90 @@ def generate_html(s: dict, events: list[dict]) -> str:
         if n >= 1_000:     return f'{n/1_000:.1f}k'
         return str(n)
 
-    session_date = s.get('session_start', 'this session')[:19].replace('T', ' ')
+    def pct_bar(n: int, total: int) -> str:
+        """Percentage for inline flow bar widths."""
+        return f'{round(n / total * 100) if total > 0 else 0}%'
+
+    session_date = s.get('session_start', '')[:19].replace('T', ' ') or 'this session'
+
+    fill_color  = '#ff453a' if fill_pct > 85 else '#ffd60a' if fill_pct > 70 else '#30d158'
+    roi_color   = '#30d158' if roi >= 1 else '#ffd60a'
+    ratio_color = '#0a84ff'
+
+    # Build cost table rows
+    cost_rows = f"""
+      <div class="cost-row">
+        <span class="cost-label">Tokens in</span>
+        <span class="cost-tokens">{fk(inp)}</span>
+        <span class="cost-val">{fc(actual_in_cost)}</span>
+      </div>
+      <div class="cost-row">
+        <span class="cost-label">Tokens out</span>
+        <span class="cost-tokens">{fk(out_tok)}</span>
+        <span class="cost-val">{fc(actual_out_cost)}</span>
+      </div>
+      <div class="cost-row cost-row-sep">
+        <span class="cost-label" style="color:#fff">Actual spend</span>
+        <span class="cost-tokens">—</span>
+        <span class="cost-val" style="color:#ffd60a;font-weight:600">{fc(actual_cost)}</span>
+      </div>
+      <div class="cost-row">
+        <span class="cost-label" style="color:#30d158">Tool compression</span>
+        <span class="cost-tokens" style="color:#30d158">-{fk(tool_saved)}</span>
+        <span class="cost-val" style="color:#30d158">-{fc(saved_in_cost)}</span>
+      </div>
+      <div class="cost-row">
+        <span class="cost-label" style="color:#30d158">Output mode</span>
+        <span class="cost-tokens" style="color:#30d158">-{fk(out_s)}</span>
+        <span class="cost-val" style="color:#30d158">-{fc(saved_out_cost)}</span>
+      </div>
+      <div class="cost-row cost-row-sep">
+        <span class="cost-label" style="color:#30d158;font-weight:600">Total saved</span>
+        <span class="cost-tokens" style="color:#30d158;font-weight:600">-{fk(t_saved)}</span>
+        <span class="cost-val" style="color:#30d158;font-weight:600">-{fc(saved_cost)}</span>
+      </div>
+      <div class="cost-row">
+        <span class="cost-label" style="color:#ff453a">Without Pith</span>
+        <span class="cost-tokens" style="color:#ff453a">{fk(without)}</span>
+        <span class="cost-val" style="color:#ff453a">{fc(would_cost)}</span>
+      </div>
+    """
+
+    timeline_html = ''
+    if events:
+        timeline_html = '''
+      <div class="card wide r">
+        <div class="card-eye">Compression Events</div>
+        <div class="card-title">Timeline — tokens kept vs saved per event</div>
+        <div class="chart-wrap"><canvas id="timeline"></canvas></div>
+      </div>'''
+
+    timeline_js = ''
+    if events:
+        timeline_js = f"""
+new Chart(document.getElementById('timeline'), {{
+  type: 'bar',
+  data: {{
+    labels: {tel_labels},
+    datasets: [
+      {{ label: 'After (kept)', data: {tel_after}, backgroundColor: '#0a84ff', borderRadius: 3, borderWidth: 0 }},
+      {{ label: 'Saved',        data: {tel_saved}, backgroundColor: '#30d158', borderRadius: 3, borderWidth: 0 }}
+    ]
+  }},
+  options: {{
+    plugins: {{
+      legend: {{ position: 'top', labels: {{ boxWidth: 10, padding: 16, color: 'rgba(255,255,255,0.45)', font: {{ size: 11 }} }} }}
+    }},
+    scales: {{
+      x: {{ stacked: true, grid: {{ color: 'rgba(255,255,255,0.04)' }}, ticks: {{ color: 'rgba(255,255,255,0.3)', font: {{ size: 10 }} }} }},
+      y: {{ stacked: true, beginAtZero: true,
+            grid: {{ color: 'rgba(255,255,255,0.04)' }},
+            ticks: {{ color: 'rgba(255,255,255,0.3)', font: {{ size: 10 }},
+                      callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v }} }}
+    }},
+    animation: {{ duration: 900, easing: 'easeOutQuart' }}
+  }}
+}});"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -112,197 +191,428 @@ def generate_html(s: dict, events: list[dict]) -> str:
 <title>Pith Session Report</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
-* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
 :root {{
-  --bg:      #09090b;
-  --surface: #111113;
+  --font:    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  --mono:    "SF Mono", ui-monospace, "Cascadia Code", monospace;
+  --bg:      #000;
+  --bg1:     #0a0a0a;
+  --bg2:     #111;
+  --fg:      #fff;
+  --fg2:     rgba(255,255,255,0.55);
+  --fg3:     rgba(255,255,255,0.25);
+  --fg4:     rgba(255,255,255,0.10);
   --border:  rgba(255,255,255,0.08);
-  --text:    #e4e4e7;
-  --muted:   #71717a;
-  --dim:     #3f3f46;
-  --purple:  #a78bfa;
-  --green:   #34d399;
-  --yellow:  #fbbf24;
-  --red:     #f87171;
+  --border2: rgba(255,255,255,0.14);
+  --blue:    #0a84ff;
+  --green:   #30d158;
+  --red:     #ff453a;
+  --amber:   #ffd60a;
+  --violet:  #bf5af2;
+  --emerald: #34d399;
+  --indigo:  #818cf8;
+  --orange:  #fb923c;
+  --ease:    cubic-bezier(0.25,0.46,0.45,0.94);
 }}
+
+html {{ scroll-behavior: smooth; }}
 body {{
   background: var(--bg);
-  color: var(--text);
-  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
-  font-size: 13px;
+  color: var(--fg);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
   min-height: 100vh;
-  padding: 32px 24px;
 }}
-h1 {{ font-size: 15px; font-weight: 700; color: var(--purple); letter-spacing: 0.1em; }}
-.subtitle {{ color: var(--muted); font-size: 11px; margin-top: 4px; }}
-header {{ margin-bottom: 28px; }}
+
+/* ── NAV ──────────────────────────────────────────────────────────── */
+nav {{
+  position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+  display: flex; align-items: center; height: 48px; padding: 0 28px;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--border);
+}}
+.nav-logo {{
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg);
+  text-decoration: none; margin-right: auto;
+}}
+.nav-meta {{ font-size: 12px; color: var(--fg4); font-family: var(--mono); }}
+.nav-badge {{
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 3px 10px; border-radius: 980px; text-transform: uppercase;
+  background: rgba(10,132,255,0.1); color: var(--blue); border: 1px solid rgba(10,132,255,0.2);
+  margin-left: 12px;
+}}
+
+/* ── HERO / HEADER ────────────────────────────────────────────────── */
+.hero {{
+  position: relative; padding: 128px 48px 80px;
+  display: flex; flex-direction: column; align-items: flex-start;
+  max-width: 1120px; margin: 0 auto; overflow: visible;
+}}
+.hero-mesh {{ position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }}
+.mesh-orb {{ position: absolute; border-radius: 50%; filter: blur(100px); }}
+.m1 {{ width:700px;height:400px;background:radial-gradient(ellipse,rgba(10,132,255,0.10) 0%,transparent 70%);top:-10%;right:-5%; }}
+.m2 {{ width:400px;height:300px;background:radial-gradient(ellipse,rgba(52,211,153,0.07) 0%,transparent 70%);bottom:0%;left:-5%; }}
+.m3 {{ width:300px;height:300px;background:radial-gradient(ellipse,rgba(191,90,242,0.06) 0%,transparent 70%);top:30%;left:40%; }}
+
+.hero-inner {{ position: relative; z-index: 1; }}
+.hero-eyebrow {{
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--fg3); margin-bottom: 20px;
+}}
+.eyebrow-dot {{
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--blue); box-shadow: 0 0 10px rgba(10,132,255,0.8);
+  animation: blink 2.5s ease-in-out infinite;
+}}
+@keyframes blink {{ 0%,100%{{opacity:1}} 50%{{opacity:0.3}} }}
+
+.hero h1 {{
+  font-size: clamp(48px, 6vw, 80px); font-weight: 700;
+  letter-spacing: -0.045em; line-height: 0.95; margin-bottom: 16px;
+}}
+.h1-a {{ color: #fff; }}
+.h1-b {{ color: rgba(255,255,255,0.28); display: block; }}
+.hero-sub {{
+  font-size: 16px; color: var(--fg3); font-family: var(--mono);
+  letter-spacing: -0.01em; margin-top: 12px;
+}}
+
+/* ── CONTENT WRAPPER ──────────────────────────────────────────────── */
+.content {{ max-width: 1120px; margin: 0 auto; padding: 0 48px 96px; }}
+
+/* ── STATS BAR ────────────────────────────────────────────────────── */
+.stats {{
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--border); border-radius: 20px;
+  overflow: hidden; margin-bottom: 2px;
+}}
+.stat {{
+  padding: 40px 36px;
+  border-right: 1px solid var(--border);
+  transition: background 0.2s;
+}}
+.stat:last-child {{ border-right: none; }}
+.stat:hover {{ background: var(--bg1); }}
+.stat-eye {{
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg4); margin-bottom: 12px;
+}}
+.stat-n {{
+  font-size: clamp(36px, 4vw, 56px); font-weight: 700;
+  letter-spacing: -0.05em; line-height: 1; margin-bottom: 8px;
+}}
+.stat-l {{ font-size: 13px; color: var(--fg3); letter-spacing: -0.01em; line-height: 1.5; }}
+
+/* ── SECTION LABEL ────────────────────────────────────────────────── */
+.section-label {{
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--blue); margin: 56px 0 20px;
+}}
+.section-label.green  {{ color: var(--emerald); }}
+.section-label.violet {{ color: var(--violet); }}
+.section-label.amber  {{ color: var(--amber); }}
+
+/* ── CARDS GRID ───────────────────────────────────────────────────── */
 .grid {{
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px;
 }}
+.grid.cols3 {{ grid-template-columns: repeat(3, 1fr); }}
+.wide {{ grid-column: 1 / -1; }}
+
 .card {{
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 18px 20px;
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: 20px; padding: 32px;
+  transition: background 0.25s var(--ease), border-color 0.25s var(--ease);
+}}
+.card:hover {{ background: var(--bg2); border-color: var(--border2); }}
+.card-eye {{
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--fg4); margin-bottom: 8px;
 }}
 .card-title {{
-  font-size: 10px;
-  color: var(--muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 10px;
+  font-size: 17px; font-weight: 600; letter-spacing: -0.02em;
+  color: #fff; margin-bottom: 24px; line-height: 1.3;
 }}
-.big {{ font-size: 26px; font-weight: 700; }}
-.sub {{ font-size: 11px; color: var(--muted); margin-top: 4px; }}
-.green  {{ color: var(--green); }}
-.yellow {{ color: var(--yellow); }}
-.red    {{ color: var(--red); }}
-.purple {{ color: var(--purple); }}
+.chart-wrap {{ height: 240px; position: relative; }}
 
-/* flow bar */
-.flow {{ margin: 6px 0; }}
-.flow-label {{ font-size: 10px; color: var(--muted); width: 140px; display: inline-block; }}
+/* ── TOKEN FLOW ───────────────────────────────────────────────────── */
+.flow-rows {{ display: flex; flex-direction: column; gap: 16px; }}
+.flow-row {{ display: flex; flex-direction: column; gap: 6px; }}
+.flow-header {{ display: flex; justify-content: space-between; align-items: baseline; }}
+.flow-name {{
+  font-size: 13px; color: var(--fg2); letter-spacing: -0.01em;
+}}
+.flow-val {{
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  letter-spacing: -0.02em;
+}}
 .flow-track {{
-  display: inline-block;
-  width: 180px;
-  height: 8px;
-  background: var(--dim);
-  border-radius: 4px;
-  vertical-align: middle;
-  overflow: hidden;
-  margin-right: 8px;
+  height: 6px; background: rgba(255,255,255,0.06); border-radius: 980px; overflow: hidden;
 }}
 .flow-fill {{
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.6s ease;
+  height: 100%; border-radius: 980px;
+  transition: width 0.9s cubic-bezier(0.16,1,0.3,1);
 }}
-.flow-val {{ font-size: 10px; color: var(--muted); }}
+.flow-sub {{ font-size: 11px; color: var(--fg4); }}
 
-.wide {{ grid-column: 1 / -1; }}
-canvas {{ max-height: 220px; }}
+/* ── COST TABLE ───────────────────────────────────────────────────── */
+.cost-rows {{ display: flex; flex-direction: column; }}
+.cost-row {{
+  display: grid; grid-template-columns: 1fr auto auto;
+  align-items: center; gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}}
+.cost-row:last-child {{ border-bottom: none; }}
+.cost-row-sep {{ border-top: 1px solid var(--border2); margin-top: 2px; padding-top: 15px; }}
+.cost-label {{ font-size: 14px; color: var(--fg2); letter-spacing: -0.01em; }}
+.cost-tokens {{ font-family: var(--mono); font-size: 13px; color: var(--fg3); text-align: right; }}
+.cost-val {{ font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--fg2); text-align: right; min-width: 80px; }}
 
-table {{ width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }}
-th {{ color: var(--muted); text-align: left; padding: 4px 6px; font-weight: normal; border-bottom: 1px solid var(--border); }}
-td {{ padding: 5px 6px; border-bottom: 1px solid var(--dim); }}
-tr:last-child td {{ border-bottom: none; }}
+/* ── BUCKET TABLE ─────────────────────────────────────────────────── */
+.bucket-rows {{ display: flex; flex-direction: column; gap: 0; }}
+.bucket-row {{
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}}
+.bucket-row:last-child {{ border-bottom: none; }}
+.bucket-dot {{ width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }}
+.bucket-name {{ font-size: 14px; color: var(--fg2); flex: 1; letter-spacing: -0.01em; }}
+.bucket-track {{ flex: 2; height: 4px; background: rgba(255,255,255,0.06); border-radius: 980px; overflow: hidden; }}
+.bucket-fill {{ height: 100%; border-radius: 980px; }}
+.bucket-val {{ font-family: var(--mono); font-size: 12px; color: var(--fg3); min-width: 48px; text-align: right; }}
+.bucket-pct {{ font-family: var(--mono); font-size: 11px; color: var(--fg4); min-width: 32px; text-align: right; }}
 
-footer {{ color: var(--muted); font-size: 10px; margin-top: 28px; text-align: center; }}
+/* ── REVEAL ───────────────────────────────────────────────────────── */
+.r {{ opacity: 0; transform: translateY(24px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }}
+.r.on {{ opacity: 1; transform: none; }}
+.r.d1 {{ transition-delay: 0.08s; }}
+.r.d2 {{ transition-delay: 0.16s; }}
+.r.d3 {{ transition-delay: 0.24s; }}
+.r.d4 {{ transition-delay: 0.32s; }}
+
+/* ── FOOTER ───────────────────────────────────────────────────────── */
+.page-footer {{
+  border-top: 1px solid var(--border);
+  padding: 20px 48px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--fg4); letter-spacing: -0.01em;
+  max-width: 1120px; margin: 0 auto;
+}}
+
+@media (max-width: 800px) {{
+  .hero {{ padding: 100px 24px 60px; }}
+  .content {{ padding: 0 24px 64px; }}
+  .stats {{ grid-template-columns: repeat(2, 1fr); }}
+  .stat:nth-child(2) {{ border-right: none; }}
+  .stat:nth-child(3), .stat:nth-child(4) {{ border-top: 1px solid var(--border); }}
+  .grid, .grid.cols3 {{ grid-template-columns: 1fr; }}
+  .page-footer {{ padding: 20px 24px; flex-direction: column; gap: 8px; text-align: center; }}
+}}
 </style>
 </head>
 <body>
-<header>
-  <h1>◆ PITH SESSION REPORT</h1>
-  <div class="subtitle">{session_date} &nbsp;·&nbsp; mode: {mode.upper()} &nbsp;·&nbsp; Sonnet 4.6</div>
-</header>
 
-<!-- ── KPI cards ── -->
-<div class="grid">
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="10" cy="10" r="9" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
+      <circle cx="10" cy="10" r="5.5" stroke="rgba(255,255,255,0.45)" stroke-width="1.2"/>
+      <circle cx="10" cy="10" r="2" fill="#fff"/>
+      <line x1="10" y1="1.5" x2="10" y2="3.5" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-linecap="round"/>
+      <line x1="10" y1="16.5" x2="10" y2="18.5" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-linecap="round"/>
+      <line x1="1.5" y1="10" x2="3.5" y2="10" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-linecap="round"/>
+      <line x1="16.5" y1="10" x2="18.5" y2="10" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-linecap="round"/>
+    </svg>
+    Pith
+  </a>
+  <span class="nav-meta">{session_date}</span>
+  <span class="nav-badge">Session Report</span>
+</nav>
+
+<!-- HERO -->
+<section class="hero r on">
+  <div class="hero-mesh">
+    <div class="mesh-orb m1"></div>
+    <div class="mesh-orb m2"></div>
+    <div class="mesh-orb m3"></div>
+  </div>
+  <div class="hero-inner">
+    <div class="hero-eyebrow">
+      <div class="eyebrow-dot"></div>
+      Token optimization · Pith for Claude Code
+    </div>
+    <h1>
+      <span class="h1-a">{fk(t_saved)} tokens saved.</span>
+      <span class="h1-b">{pct}% compression this session.</span>
+    </h1>
+    <p class="hero-sub">mode: {mode.upper()} &nbsp;·&nbsp; model: Sonnet 4.6 &nbsp;·&nbsp; {session_date}</p>
+  </div>
+</section>
+
+<div class="content">
+
+<!-- STATS BAR -->
+<div class="stats r d1">
+  <div class="stat">
+    <div class="stat-eye">Compression ratio</div>
+    <div class="stat-n" style="color:{ratio_color}">{comp_ratio}:1</div>
+    <div class="stat-l">{pct}% fewer tokens than baseline</div>
+  </div>
+  <div class="stat">
+    <div class="stat-eye">Tokens saved</div>
+    <div class="stat-n" style="color:var(--emerald)">{fk(t_saved)}</div>
+    <div class="stat-l">of {fk(without)} token baseline</div>
+  </div>
+  <div class="stat">
+    <div class="stat-eye">Cost ROI</div>
+    <div class="stat-n" style="color:{roi_color}">{roi}×</div>
+    <div class="stat-l">{fc(saved_cost)} saved · {fc(actual_cost)} spent</div>
+  </div>
+  <div class="stat">
+    <div class="stat-eye">Context fill</div>
+    <div class="stat-n" style="color:{fill_color}">{fill_pct}%</div>
+    <div class="stat-l">{fk(inp)} of {fk(limit)} tokens used</div>
+  </div>
+</div>
+
+<!-- TOKEN FLOW + COST BREAKDOWN -->
+<div class="section-label r d2">Token Flow</div>
+<div class="grid r d2">
 
   <div class="card">
-    <div class="card-title">Compression Ratio</div>
-    <div class="big purple">{comp_ratio}:1</div>
-    <div class="sub">{pct}% fewer tokens than uncompressed baseline</div>
+    <div class="card-eye">Where tokens went</div>
+    <div class="card-title">Baseline vs compressed</div>
+    <div class="flow-rows">
+      <div class="flow-row">
+        <div class="flow-header">
+          <span class="flow-name">Baseline (without Pith)</span>
+          <span class="flow-val" style="color:rgba(255,255,255,0.35)">{fk(without)}</span>
+        </div>
+        <div class="flow-track"><div class="flow-fill" style="width:100%;background:rgba(255,255,255,0.12)"></div></div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-header">
+          <span class="flow-name" style="color:var(--violet)">Pith intercepted &amp; removed</span>
+          <span class="flow-val" style="color:var(--violet)">-{fk(t_saved)}</span>
+        </div>
+        <div class="flow-track"><div class="flow-fill" style="width:{pct_bar(t_saved, without)};background:var(--violet)"></div></div>
+        <div class="flow-sub">{pct}% of baseline removed before reaching context</div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-header">
+          <span class="flow-name" style="color:var(--blue)">Sent to context (input)</span>
+          <span class="flow-val" style="color:var(--blue)">{fk(inp)}</span>
+        </div>
+        <div class="flow-track"><div class="flow-fill" style="width:{pct_bar(inp, without)};background:var(--blue)"></div></div>
+        <div class="flow-sub">{round(inp/without*100) if without else 0}% of uncompressed baseline</div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-header">
+          <span class="flow-name" style="color:var(--amber)">Model output</span>
+          <span class="flow-val" style="color:var(--amber)">{fk(out_tok)}</span>
+        </div>
+        <div class="flow-track"><div class="flow-fill" style="width:{pct_bar(out_tok, max(without,1))};background:var(--amber)"></div></div>
+        <div class="flow-sub">tokens generated this session</div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
-    <div class="card-title">Tokens Saved</div>
-    <div class="big green">{fk(t_saved)}</div>
-    <div class="sub">of {fk(without)} token baseline removed by Pith</div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Cost ROI</div>
-    <div class="big {'green' if roi > 1 else 'yellow'}">{roi}×</div>
-    <div class="sub">{fc(saved_cost)} saved · {fc(actual_cost)} spent</div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Context Fill</div>
-    <div class="big {'red' if fill_pct > 85 else 'yellow' if fill_pct > 70 else 'green'}">{fill_pct}%</div>
-    <div class="sub">{fk(inp)} of {fk(limit)} tokens used</div>
+    <div class="card-eye">Cost breakdown</div>
+    <div class="card-title">Actual vs what you'd have paid</div>
+    <div class="cost-rows">
+{cost_rows}
+    </div>
   </div>
 
 </div>
 
-<!-- ── Token flow ── -->
-<div class="card" style="margin-bottom:16px">
-  <div class="card-title">Token Flow</div>
-
-  <div class="flow">
-    <span class="flow-label">Baseline (no Pith)</span>
-    <span class="flow-track"><span class="flow-fill" style="width:100%;background:#3f3f46"></span></span>
-    <span class="flow-val">{fk(without)}</span>
-  </div>
-  <div class="flow">
-    <span class="flow-label">Pith intercepted</span>
-    <span class="flow-track"><span class="flow-fill" style="width:{round(t_saved/without*100) if without else 0}%;background:#a78bfa"></span></span>
-    <span class="flow-val purple">-{fk(t_saved)}</span>
-  </div>
-  <div class="flow">
-    <span class="flow-label">Sent to context (input)</span>
-    <span class="flow-track"><span class="flow-fill" style="width:{round(inp/without*100) if without else 0}%;background:#818cf8"></span></span>
-    <span class="flow-val">{fk(inp)}</span>
-  </div>
-  <div class="flow">
-    <span class="flow-label">Model output</span>
-    <span class="flow-track"><span class="flow-fill" style="width:{round(out_tok/without*100) if without else 0}%;background:#fbbf24"></span></span>
-    <span class="flow-val yellow">{fk(out_tok)}</span>
-  </div>
-</div>
-
-<!-- ── Charts row ── -->
-<div class="grid">
+<!-- CHARTS -->
+<div class="section-label green r d2">Savings Analysis</div>
+<div class="grid r d3">
 
   <div class="card">
-    <div class="card-title">Savings by Category</div>
-    <canvas id="donut"></canvas>
+    <div class="card-eye">By category</div>
+    <div class="card-title">Savings distribution</div>
+    <div class="chart-wrap"><canvas id="donut"></canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-title">Input vs Output vs Saved</div>
-    <canvas id="bar"></canvas>
+    <div class="card-eye">Category detail</div>
+    <div class="card-title">Tokens saved per source</div>
+    <div class="bucket-rows" id="bucket-rows"></div>
   </div>
 
-  {'<div class="card wide"><div class="card-title">Compression Events Timeline</div><canvas id="timeline"></canvas></div>' if events else ''}
-
 </div>
 
-<!-- ── Cost table ── -->
-<div class="card" style="margin-bottom:16px">
-  <div class="card-title">Cost Breakdown</div>
-  <table>
-    <thead><tr><th>Item</th><th>Tokens</th><th>Cost</th></tr></thead>
-    <tbody>
-      <tr><td>Input tokens</td><td>{fk(inp)}</td><td>{fc(actual_in_cost)}</td></tr>
-      <tr><td>Output tokens</td><td>{fk(out_tok)}</td><td>{fc(actual_out_cost)}</td></tr>
-      <tr><td class="yellow">Actual spend</td><td>—</td><td class="yellow">{fc(actual_cost)}</td></tr>
-      <tr><td class="green">Tool compression saved</td><td>-{fk(tool_saved)}</td><td class="green">-{fc(saved_in_cost)}</td></tr>
-      <tr><td class="green">Output mode saved</td><td>-{fk(out_s)}</td><td class="green">-{fc(saved_out_cost)}</td></tr>
-      <tr><td class="green">Total saved</td><td>-{fk(t_saved)}</td><td class="green">-{fc(saved_cost)}</td></tr>
-      <tr><td class="red">Without Pith</td><td>{fk(without)}</td><td class="red">{fc(would_cost)}</td></tr>
-    </tbody>
-  </table>
+<div class="grid r d4" style="margin-top:2px">
+  <div class="card">
+    <div class="card-eye">Input vs output vs saved</div>
+    <div class="card-title">Token volume comparison</div>
+    <div class="chart-wrap"><canvas id="bar"></canvas></div>
+  </div>
+  {timeline_html}
 </div>
 
-<footer>Generated by Pith · /pith report · {session_date}</footer>
+</div><!-- /content -->
+
+<footer class="page-footer r">
+  <span>◆ Pith Session Report &nbsp;·&nbsp; {session_date}</span>
+  <span>Run <code style="font-family:var(--mono);opacity:0.6">/pith report</code> to refresh &nbsp;·&nbsp; <code style="font-family:var(--mono);opacity:0.6">/pith status</code> for terminal view</span>
+</footer>
 
 <script>
-const PURPLE = '#a78bfa', GREEN = '#34d399', YELLOW = '#fbbf24', RED = '#f87171';
-const BLUE = '#818cf8', ORANGE = '#fb923c', PINK = '#f472b6', CYAN = '#22d3ee';
+// ── Chart.js global defaults ──────────────────────────────────────────────────
+Chart.defaults.color = 'rgba(255,255,255,0.3)';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.04)';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif";
+Chart.defaults.font.size = 12;
 
-Chart.defaults.color = '#71717a';
-Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
-Chart.defaults.font.family = "'SF Mono', 'Fira Code', ui-monospace, monospace";
-Chart.defaults.font.size = 11;
+const BLUE    = '#0a84ff';
+const GREEN   = '#30d158';
+const AMBER   = '#ffd60a';
+const VIOLET  = '#bf5af2';
+const EMERALD = '#34d399';
+const ORANGE  = '#fb923c';
+const INDIGO  = '#818cf8';
+const PINK    = '#f472b6';
+const RED     = '#ff453a';
 
-// ── Donut — savings by category ──
+// ── Bucket data ───────────────────────────────────────────────────────────────
 const bucketLabels = {buckets_labels};
 const bucketData   = {buckets_data};
-const bucketColors = [BLUE, ORANGE, CYAN, PURPLE, PINK, GREEN, YELLOW];
+const bucketColors = [INDIGO, ORANGE, EMERALD, VIOLET, PINK, GREEN, AMBER];
+const totalSaved   = bucketData.reduce((a, b) => a + b, 0);
+
+// ── Build bucket detail rows ──────────────────────────────────────────────────
+const bucketContainer = document.getElementById('bucket-rows');
+bucketLabels.forEach((label, i) => {{
+  if (bucketData[i] <= 0) return;
+  const pct   = totalSaved > 0 ? Math.round(bucketData[i] / totalSaved * 100) : 0;
+  const width = pct + '%';
+  const val   = bucketData[i] >= 1000 ? (bucketData[i]/1000).toFixed(1)+'k' : bucketData[i];
+  const row = document.createElement('div');
+  row.className = 'bucket-row';
+  row.innerHTML = `
+    <div class="bucket-dot" style="background:${{bucketColors[i]}}"></div>
+    <div class="bucket-name">${{label}}</div>
+    <div class="bucket-track"><div class="bucket-fill" style="width:${{width}};background:${{bucketColors[i]}}"></div></div>
+    <div class="bucket-val">${{val}}</div>
+    <div class="bucket-pct">${{pct}}%</div>
+  `;
+  bucketContainer.appendChild(row);
+}});
+
+// ── Donut ─────────────────────────────────────────────────────────────────────
 const nonZeroLabels = [], nonZeroData = [], nonZeroColors = [];
 bucketLabels.forEach((l, i) => {{
   if (bucketData[i] > 0) {{
@@ -315,57 +625,61 @@ bucketLabels.forEach((l, i) => {{
 new Chart(document.getElementById('donut'), {{
   type: 'doughnut',
   data: {{
-    labels: nonZeroLabels.length ? nonZeroLabels : ['No data'],
-    datasets: [{{ data: nonZeroData.length ? nonZeroData : [1], backgroundColor: nonZeroColors.length ? nonZeroColors : ['#3f3f46'], borderWidth: 0 }}]
+    labels: nonZeroLabels.length ? nonZeroLabels : ['No data yet'],
+    datasets: [{{
+      data: nonZeroData.length ? nonZeroData : [1],
+      backgroundColor: nonZeroColors.length ? nonZeroColors : ['rgba(255,255,255,0.06)'],
+      borderWidth: 0,
+      hoverBorderWidth: 2,
+      hoverBorderColor: 'rgba(255,255,255,0.2)',
+    }}]
   }},
   options: {{
-    cutout: '65%',
-    plugins: {{ legend: {{ position: 'right', labels: {{ boxWidth: 10, padding: 12 }} }} }},
-    animation: {{ duration: 700 }}
+    cutout: '68%',
+    plugins: {{
+      legend: {{
+        position: 'right',
+        labels: {{ boxWidth: 10, padding: 14, color: 'rgba(255,255,255,0.45)', font: {{ size: 11 }} }}
+      }}
+    }},
+    animation: {{ duration: 900, easing: 'easeOutQuart' }}
   }}
 }});
 
-// ── Bar — input / output / saved ──
+// ── Bar ───────────────────────────────────────────────────────────────────────
 new Chart(document.getElementById('bar'), {{
   type: 'bar',
   data: {{
     labels: ['Input', 'Output', 'Saved'],
     datasets: [{{
       data: [{inp}, {out_tok}, {t_saved}],
-      backgroundColor: [BLUE, YELLOW, GREEN],
-      borderRadius: 4,
+      backgroundColor: [BLUE, AMBER, GREEN],
+      borderRadius: 6,
       borderWidth: 0,
     }}]
   }},
   options: {{
     plugins: {{ legend: {{ display: false }} }},
     scales: {{
-      y: {{ beginAtZero: true, ticks: {{ callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v }} }},
-      x: {{ grid: {{ display: false }} }}
+      y: {{
+        beginAtZero: true,
+        grid: {{ color: 'rgba(255,255,255,0.04)' }},
+        ticks: {{ color: 'rgba(255,255,255,0.3)', font: {{ size: 11 }},
+                  callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v }}
+      }},
+      x: {{ grid: {{ display: false }}, ticks: {{ color: 'rgba(255,255,255,0.3)', font: {{ size: 12 }} }} }}
     }},
-    animation: {{ duration: 700 }}
+    animation: {{ duration: 900, easing: 'easeOutQuart' }}
   }}
 }});
 
-// ── Timeline — compression events ──
-{f"""new Chart(document.getElementById('timeline'), {{
-  type: 'bar',
-  data: {{
-    labels: {tel_labels},
-    datasets: [
-      {{ label: 'After (kept)', data: {tel_after},  backgroundColor: BLUE,   borderRadius: 2, borderWidth: 0 }},
-      {{ label: 'Saved',        data: {tel_saved}, backgroundColor: GREEN,  borderRadius: 2, borderWidth: 0 }}
-    ]
-  }},
-  options: {{
-    plugins: {{ legend: {{ position: 'top', labels: {{ boxWidth: 10 }} }} }},
-    scales: {{
-      x: {{ stacked: true, grid: {{ display: false }} }},
-      y: {{ stacked: true, beginAtZero: true, ticks: {{ callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v }} }}
-    }},
-    animation: {{ duration: 700 }}
-  }}
-}});""" if events else '// no telemetry events'}
+{timeline_js}
+
+// ── Reveal on scroll ──────────────────────────────────────────────────────────
+const observer = new IntersectionObserver(entries => {{
+  entries.forEach(e => {{ if (e.isIntersecting) e.target.classList.add('on'); }});
+}}, {{ threshold: 0.05 }});
+document.querySelectorAll('.r').forEach(el => observer.observe(el));
 </script>
 </body>
 </html>"""
