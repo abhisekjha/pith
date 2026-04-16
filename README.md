@@ -112,6 +112,8 @@ Uses tree-sitter AST when available, regex fallback otherwise. Supports Python, 
 /pith hindsight → manual hindsight analysis, anytime
 ```
 
+![/pith status — token flow chart, compression ratio, cost breakdown](assets/status-screenshot.png)
+
 **Structured formats** — each answer fits a template, no prose waste
 ```
 /pith debug     problem / cause / fix / verify
