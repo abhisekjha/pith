@@ -1090,6 +1090,11 @@
       <p>Tool outputs that exceed 300 tokens after compression are automatically written to <code style="font-family:var(--mono);font-size:11px">~/.pith/tmp/</code> and replaced with a 3-line pointer in context. Claude can read them on demand — nothing is lost, but large payloads never bloat the context window. Offloaded bytes tracked in <code style="font-family:var(--mono);font-size:11px">/pith status</code>.</p>
     </div>
     <div class="feat">
+      <div class="feat-n">17</div>
+      <h3>jCodeMunch wiki ingest <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">jCodeMunch · 2026</span></h3>
+      <p>When you <code style="font-family:var(--mono);font-size:11px">/pith ingest</code> a code file, Pith runs <code style="font-family:var(--mono);font-size:11px">symbols.py --list</code> first to extract the structural skeleton — imports, signatures, class outlines — then passes that to a code-aware analysis prompt instead of raw source lines. Creates <strong>Module</strong> and <strong>Class</strong> wiki pages with exports, key methods, and architectural dependencies rather than generic concept pages.</p>
+    </div>
+    <div class="feat">
       <div class="feat-n">16</div>
       <h3>Hindsight pruning <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">Hindsight · 2026</span></h3>
       <p>Scans the session's tool call telemetry for stale context: files read multiple times (only the latest matters), large bash outputs from early-session setup steps, results that are now irrelevant. Reports total stale token cost and recommends <code style="font-family:var(--mono);font-size:11px">/compact</code>. Fires automatically once when context passes 60%.</p>
@@ -1251,7 +1256,7 @@
     <div class="cmd-grid" style="margin-top:2px">
       <div class="cmd-group-label">Wiki system</div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith wiki "&lt;question&gt;"</span></span><span class="cmd-v">Query the wiki — synthesises answer with page citations</span></div>
-      <div class="cmd"><span class="cmd-k"><span class="hl">/pith ingest &lt;file&gt;</span></span><span class="cmd-v">Parse a file into wiki pages — shows diff, waits for confirmation</span></div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith ingest &lt;file&gt;</span></span><span class="cmd-v">Parse a file into wiki pages — code files use jCodeMunch structure-aware analysis</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith lint</span></span><span class="cmd-v">Semantic contradiction detection, orphan pages, stale claims, broken index</span></div>
     </div>
 

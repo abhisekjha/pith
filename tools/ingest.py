@@ -15,6 +15,80 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+CODE_EXTENSIONS = {
+    'py', 'js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs',
+    'go', 'java', 'kt', 'rs', 'cs', 'cpp', 'c', 'h',
+    'rb', 'php', 'swift',
+}
+
+CODE_MUNCH_PROMPT = """You are maintaining a project knowledge wiki. A code file has been added.
+
+Extract the structural knowledge — what this module exports, what its classes do,
+key architectural dependencies. NOT implementation details.
+
+CODE SKELETON (imports + signatures from symbols.py):
+{skeleton}
+
+FILE HEAD (first 120 lines for context):
+{head}
+
+EXISTING WIKI INDEX:
+{wiki_index}
+
+OUTPUT THIS JSON (no other text):
+{{
+  "title": "module or file title",
+  "summary": "1-2 sentences: what this module does and why it exists",
+  "module_name": "the primary module/class/package name",
+  "exports": ["list of exported functions, classes, or constants"],
+  "classes": [
+    {{"name": "ClassName", "purpose": "one sentence", "key_methods": ["method1", "method2"]}}
+  ],
+  "dependencies": ["imported modules/packages that matter architecturally"],
+  "key_claims": ["important facts about this code's behaviour or contract"],
+  "contradictions": ["anything conflicting with existing wiki, or empty"],
+  "update_pages": ["existing wiki page paths to update"],
+  "create_pages": [
+    {{"path": "wiki/entities/ModuleName.md", "type": "module", "name": "ModuleName"}},
+    {{"path": "wiki/entities/ClassName.md",  "type": "class",  "name": "ClassName", "module": "ModuleName"}}
+  ]
+}}"""
+
+MODULE_FORMAT = """# {name}
+
+**Type:** module
+**File:** `{filepath}`
+**Summary:** [one sentence]
+
+## Exports
+- `[symbol]` — [one line purpose]
+
+## Dependencies
+- [[related]] — [why it depends on this]
+
+## Notes
+- [architectural decision or constraint worth knowing]
+
+## Sources
+- [{title}]({source_path}) — {date}"""
+
+CLASS_FORMAT = """# {name}
+
+**Type:** class
+**Module:** [[{module}]]
+**Summary:** [one sentence]
+
+## Key Methods
+| Method | Purpose |
+|--------|---------|
+| `method()` | [one line] |
+
+## Relationships
+- [[related]] — [how related]
+
+## Sources
+- [{title}]({source_path}) — {date}"""
+
 INGEST_PROMPT = """You are maintaining a project knowledge wiki. A new source document has been added.
 
 Your job:
@@ -88,6 +162,23 @@ CONCEPT_FORMAT = """# {name}
 
 ## Sources
 - [{title}]({source_path}) — {date}"""
+
+
+def get_code_skeleton(filepath: Path) -> str:
+    """Use symbols.py --list to get the structural skeleton of a code file."""
+    symbols_py = Path(__file__).parent / 'symbols.py'
+    if symbols_py.exists():
+        try:
+            r = subprocess.run(
+                ['python3', str(symbols_py), '--list', str(filepath)],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+        except Exception:
+            pass
+    # Fallback: first 80 lines
+    return '\n'.join(filepath.read_text(errors='ignore').split('\n')[:80])
 
 
 def call_claude(prompt: str) -> str:
@@ -176,13 +267,27 @@ def ingest(filepath: Path):
     source_title   = filepath.stem.replace('-', ' ').replace('_', ' ').title()
     now            = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
-    print(f'Analyzing {filepath.name}...')
+    ext     = filepath.suffix.lower().lstrip('.')
+    is_code = ext in CODE_EXTENSIONS
+
+    if is_code:
+        print(f'[jCodeMunch] Code file detected ({ext}) — using structure-aware analysis...')
+        skeleton = get_code_skeleton(filepath)
+        head     = '\n'.join(source_content.split('\n')[:120])
+        prompt   = CODE_MUNCH_PROMPT.format(
+            skeleton=skeleton[:4000],
+            head=head[:3000],
+            wiki_index=wiki_index[:2000],
+        )
+    else:
+        print(f'Analyzing {filepath.name}...')
+        prompt = INGEST_PROMPT.format(
+            source_content=source_content[:8000],
+            wiki_index=wiki_index[:3000],
+        )
 
     # Step 1: Extract information
-    analysis_raw = call_claude(INGEST_PROMPT.format(
-        source_content=source_content[:8000],  # limit to avoid huge prompts
-        wiki_index=wiki_index[:3000],
-    ))
+    analysis_raw = call_claude(prompt)
 
     try:
         # Extract JSON from response
@@ -219,13 +324,40 @@ Writing pages...""")
         page_path = cwd / page_spec['path']
         page_path.parent.mkdir(parents=True, exist_ok=True)
         page_type = page_spec.get('type', 'concept')
-        fmt = ENTITY_FORMAT if page_type == 'entity' else CONCEPT_FORMAT
-        fmt_filled = fmt.format(
-            name=page_spec['name'],
-            title=source_title,
-            source_path='../../' + rel_source,
-            date=now,
-        )
+        if page_type == 'module':
+            fmt = MODULE_FORMAT
+            fmt_filled = fmt.format(
+                name=page_spec['name'],
+                filepath=str(filepath.relative_to(cwd)) if filepath.is_relative_to(cwd) else str(filepath),
+                title=source_title,
+                source_path='../../' + rel_source,
+                date=now,
+            )
+        elif page_type == 'class':
+            fmt = CLASS_FORMAT
+            fmt_filled = fmt.format(
+                name=page_spec['name'],
+                module=page_spec.get('module', source_title),
+                title=source_title,
+                source_path='../../' + rel_source,
+                date=now,
+            )
+        elif page_type == 'entity':
+            fmt = ENTITY_FORMAT
+            fmt_filled = fmt.format(
+                name=page_spec['name'],
+                title=source_title,
+                source_path='../../' + rel_source,
+                date=now,
+            )
+        else:
+            fmt = CONCEPT_FORMAT
+            fmt_filled = fmt.format(
+                name=page_spec['name'],
+                title=source_title,
+                source_path='../../' + rel_source,
+                date=now,
+            )
         content = call_claude(WRITE_PAGE_PROMPT.format(
             page_type=page_type,
             page_path=page_spec['path'],
