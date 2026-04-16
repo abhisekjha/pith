@@ -251,6 +251,11 @@ def main():
     # ── Lifetime ──────────────────────────────────────────────────────────────
     lifetime_total = total + t_saved
     lifetime_cost  = total_cost_saved + saved_cost_val
+    # Fallback: cost_saved_total was 0 before stop.js fix (sessions before the patch).
+    # If accumulated cost is lower than what token count implies (all input at $3/1M),
+    # use the token-based floor so historical sessions aren't silently zeroed out.
+    lifetime_cost_floor = (lifetime_total / 1_000_000) * IN_COST_PER_M
+    lifetime_cost = max(lifetime_cost, lifetime_cost_floor)
     print()
     print(f'  {DIM}Lifetime{RESET}')
     print(row('Tokens saved', f'~{fmt(lifetime_total)}',  DIM))
