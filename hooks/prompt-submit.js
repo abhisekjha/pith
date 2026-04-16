@@ -177,6 +177,11 @@ process.stdin.on('end', () => {
   /pith setup            Reset and re-run onboarding
   /pith optimize-cache   Restructure CLAUDE.md for prompt caching
 
+── Integrations ────────────────────────────────────────────────
+  /pith grepai           Show GrepAI semantic search status
+  /pith grepai skip      Dismiss "install GrepAI" nudge permanently
+  /pith grepai enable    Re-enable the nudge
+
 ── Install ─────────────────────────────────────────────────────
   /pith install          Install Pith into this project
   /pith uninstall        Remove Pith from this project
@@ -206,6 +211,40 @@ Display this reference any time with: /pith help`
           out.push('[PITH: /pith focus requires a file path. Example: /pith focus src/main.js]');
         } else {
           out.push(runTool('focus.py', [rest, '--question', data.prompt || ''], root));
+        }
+
+      } else if (arg === 'grepai') {
+        // /pith grepai skip   — permanently dismiss the "install GrepAI" nudge
+        // /pith grepai enable — re-enable it (undo skip)
+        // /pith grepai status — show current state
+        const sub = (rest || '').toLowerCase().trim();
+        if (sub === 'skip' || sub === 'dismiss') {
+          saveProjectState({ grepai_skip: true });
+          out.push(
+            'PITH: GrepAI nudge dismissed. Wiki will use keyword search without ' +
+            'further prompts.\n' +
+            'To re-enable the nudge later: /pith grepai enable\n' +
+            'To install GrepAI:            https://github.com/yoanbernabeu/grepai'
+          );
+        } else if (sub === 'enable') {
+          saveProjectState({ grepai_skip: false, grepai_nudge_session: null });
+          out.push(
+            'PITH: GrepAI nudge re-enabled. Install GrepAI to upgrade wiki search ' +
+            'from keyword to semantic.\n' +
+            'Install: https://github.com/yoanbernabeu/grepai'
+          );
+        } else {
+          // /pith grepai — show status
+          const proj2 = loadProjectState();
+          const skipped = proj2.grepai_skip ? 'dismissed (run /pith grepai enable to restore)' : 'active';
+          out.push(
+            `PITH GREPAI STATUS\n` +
+            `  Nudge:   ${skipped}\n` +
+            `  Install: https://github.com/yoanbernabeu/grepai\n` +
+            `  Commands:\n` +
+            `    /pith grepai skip   — stop showing install nudge\n` +
+            `    /pith grepai enable — restore nudge`
+          );
         }
 
       } else if (SKILL_CMDS.has(arg)) {

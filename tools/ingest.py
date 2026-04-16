@@ -243,6 +243,19 @@ Writing pages...""")
 
     print(f'\nIngest complete. {len(analysis.get("create_pages", []))} pages created.')
 
+    # Step 4: Refresh GrepAI index if installed (silent — never block ingest)
+    import shutil as _shutil
+    wiki_dir = cwd / 'wiki'
+    if _shutil.which('grepai') and wiki_dir.exists():
+        try:
+            subprocess.run(
+                ['grepai', 'index', str(wiki_dir)],
+                capture_output=True, timeout=60,
+            )
+            print('  ↻ GrepAI index refreshed.')
+        except Exception:
+            pass
+
 
 def main():
     p = argparse.ArgumentParser()
