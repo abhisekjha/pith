@@ -50,26 +50,31 @@ process.stdin.on('end', () => {
     const lines = result.split('\n');
     if (lines.length <= THRESHOLD) process.exit(0); // small — pass through
 
-    let compressed = null;
+    let compressed  = null;
+    let comprFormat = 'skeleton'; // track which compression path was used
 
     switch (toolName.toLowerCase()) {
       case 'read':
       case 'readfile': {
-        // file_path can be in tool_input OR in tool_response.file.filePath
         const resp = data.tool_response || data.toolResponse || {};
         const fp   = toolInput.file_path || toolInput.path ||
                      (resp.file && resp.file.filePath) || '';
-        compressed = compressFileRead(fp, result, lines);
+        compressed  = compressFileRead(fp, result, lines);
+        comprFormat = ['json'].includes((fp.split('.').pop() || '').toLowerCase())
+                      ? 'toon' : 'skeleton';
         break;
       }
       case 'bash':
-        compressed = compressBash(toolInput.command || toolInput.cmd || '', result, lines);
+        compressed  = compressBash(toolInput.command || toolInput.cmd || '', result, lines);
+        comprFormat = 'bash';
         break;
       case 'grep':
-        compressed = compressGrep(toolInput.pattern || '', result, lines);
+        compressed  = compressGrep(toolInput.pattern || '', result, lines);
+        comprFormat = 'grep';
         break;
       case 'webfetch':
-        compressed = compressWeb(toolInput.url || '', result, lines);
+        compressed  = compressWeb(toolInput.url || '', result, lines);
+        comprFormat = 'web';
         break;
     }
 
@@ -79,10 +84,21 @@ process.stdin.on('end', () => {
       const afterTokens  = Math.ceil(compressed.length / 4);
       const savedTokens  = Math.max(0, beforeTokens - afterTokens);
       const proj = loadProjectState();
-      saveProjectState({
-        tool_savings_session: (proj.tool_savings_session || 0) + savedTokens,
-        tokens_saved_session: (proj.tokens_saved_session || 0) + savedTokens,
-      });
+
+      // Route savings into per-format buckets for status breakdown
+      const updates = {
+        tool_savings_session:  (proj.tool_savings_session  || 0) + savedTokens,
+        tokens_saved_session:  (proj.tokens_saved_session  || 0) + savedTokens,
+      };
+      if (comprFormat === 'toon') {
+        updates.toon_savings_session = (proj.toon_savings_session || 0) + savedTokens;
+        updates.toon_savings_total   = (proj.toon_savings_total   || 0) + savedTokens;
+      } else if (comprFormat === 'skeleton') {
+        updates.skeleton_savings_session = (proj.skeleton_savings_session || 0) + savedTokens;
+      } else if (comprFormat === 'bash') {
+        updates.bash_savings_session = (proj.bash_savings_session || 0) + savedTokens;
+      }
+      saveProjectState(updates);
 
       // ── Telemetry log ─────────────────────────────────────────────────────
       try {
@@ -93,6 +109,7 @@ process.stdin.on('end', () => {
           ts:            new Date().toISOString(),
           session:       proj.session_start || '',
           tool:          toolName,
+          format:        comprFormat,
           label:         (toolInput.file_path || toolInput.command || toolInput.pattern || '').slice(0, 80),
           before_lines:  lines.length,
           after_lines:   compressed.split('\n').length,

@@ -18,13 +18,16 @@ const proj = loadProjectState();
 
 // Reset per-session counters
 saveProjectState({
-  session_start: new Date().toISOString(),
-  tool_savings_session: 0,
-  output_savings_session: 0,
-  compact_count_session: 0,
-  input_tokens_est: 0,
-  output_tokens_est: 0,
-  compact_nudged: false,
+  session_start:           new Date().toISOString(),
+  tool_savings_session:    0,
+  toon_savings_session:    0,
+  skeleton_savings_session:0,
+  bash_savings_session:    0,
+  output_savings_session:  0,
+  compact_count_session:   0,
+  input_tokens_est:        0,
+  output_tokens_est:       0,
+  compact_nudged:          false,
 });
 
 const root = pluginRoot();

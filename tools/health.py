@@ -76,14 +76,18 @@ def main():
     s = load()
     inp     = s.get('input_tokens_est', 0)
     out_tok = s.get('output_tokens_est', 0)
-    t_saved = s.get('tokens_saved_session', 0)
-    tool_s  = s.get('tool_savings_session', 0)
-    out_s   = s.get('output_savings_session', 0)
-    compact = s.get('compact_count_session', 0)
-    limit   = s.get('context_limit', 200_000)
-    mode    = s.get('mode', 'off')
-    budget  = s.get('budget')
-    total   = s.get('tokens_saved_total', 0)
+    t_saved   = s.get('tokens_saved_session', 0)
+    tool_s    = s.get('tool_savings_session', 0)
+    toon_s    = s.get('toon_savings_session', 0)
+    skel_s    = s.get('skeleton_savings_session', 0)
+    bash_s    = s.get('bash_savings_session', 0)
+    out_s     = s.get('output_savings_session', 0)
+    compact   = s.get('compact_count_session', 0)
+    limit     = s.get('context_limit', 200_000)
+    mode      = s.get('mode', 'off')
+    budget    = s.get('budget')
+    total     = s.get('tokens_saved_total', 0)
+    toon_total= s.get('toon_savings_total', 0)
     total_cost_saved = s.get('cost_saved_total', 0.0)
 
     fill    = inp / limit if limit else 0
@@ -120,15 +124,19 @@ def main():
     print(f'  {DIM}{"Budget":<16}{RESET}{budget_str}')
     print(f'  {DIM}{"Model":<16}{RESET}{model_str}')
     print()
-    print(f'  {DIM}Tokens{RESET}')
-    if tool_s:
-        print(row('Tool output',  fmt(tool_s)))
+    print(f'  {DIM}Tokens saved (this session){RESET}')
+    if toon_s:
+        toon_pct = round(toon_s / t_saved * 100) if t_saved else 0
+        print(row('TOON (JSON)',   f'{fmt(toon_s)}  {DIM}{toon_pct}%{RESET}', ''))
+    if skel_s:
+        print(row('Skeletons',     fmt(skel_s)))
+    if bash_s:
+        print(row('Bash/build',    fmt(bash_s)))
     if out_s:
-        print(row('Style output', fmt(out_s)))
+        print(row('Style output',  fmt(out_s)))
     if compact:
         print(row('Auto-compacts', f'{compact}×'))
-    print(row('Compressed',   fmt(t_saved)))
-    print(row('Total Saved',  f'~{fmt(t_saved)} ({pct}%)', GREEN + BOLD))
+    print(row('Total saved',   f'~{fmt(t_saved)} ({pct}%)', GREEN + BOLD))
     print(row('Without Pith', fmt(without)))
     print()
     print(f'  {DIM}Cost (this session){RESET}')
@@ -139,7 +147,9 @@ def main():
     print(row('Without Pith', fmt_cost(would_cost),  RED))
     print()
     print(f'  {DIM}Lifetime{RESET}')
-    print(row('Tokens saved', f'~{fmt(total + t_saved)}', DIM))
+    print(row('Tokens saved', f'~{fmt(total + t_saved)}',              DIM))
+    if toon_total + toon_s:
+        print(row('TOON saved',  f'~{fmt(toon_total + toon_s)}',       DIM))
     print(row('Cost saved',   fmt_cost(total_cost_saved + saved_cost), DIM))
     print()
 
