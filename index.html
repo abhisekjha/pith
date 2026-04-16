@@ -398,20 +398,206 @@
     .r.d3 { transition-delay:0.3s; }
     .r.d4 { transition-delay:0.4s; }
 
-    /* ━━━━━━━━━━━━━━━━━━━━ RESPONSIVE ━━━━━━━━━━━━━━━━━━━━ */
+    /* ━━━━━━━━━━━━━━━━━━━━ HAMBURGER NAV ━━━━━━━━━━━━━━━━━━━━ */
+    .nav-hamburger {
+      display: none;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--fg2); padding: 5px 10px; border-radius: 8px;
+      cursor: pointer; font-size: 16px; line-height: 1;
+      margin-left: 12px; transition: background 0.15s, color 0.15s;
+    }
+    .nav-hamburger:hover { background: rgba(255,255,255,0.06); color: var(--fg); }
+
+    /* Mobile nav drawer */
+    .nav-drawer {
+      display: none;
+      position: fixed; top: 48px; left: 0; right: 0; z-index: 998;
+      background: rgba(0,0,0,0.96);
+      backdrop-filter: saturate(180%) blur(24px);
+      -webkit-backdrop-filter: saturate(180%) blur(24px);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0 24px;
+      flex-direction: column;
+    }
+    .nav-drawer.open { display: flex; }
+    .nav-drawer a {
+      font-size: 15px; font-weight: 400; color: var(--fg2);
+      text-decoration: none; padding: 12px 24px;
+      border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+      transition: color 0.15s, background 0.15s;
+    }
+    .nav-drawer a:last-child { border-bottom: none; }
+    .nav-drawer a:hover { color: var(--fg); background: rgba(255,255,255,0.03); }
+    .nav-drawer .drawer-install {
+      margin: 16px 24px 0;
+      display: inline-flex; align-items: center;
+      background: rgba(255,255,255,0.12); border: 1px solid var(--border2);
+      padding: 10px 18px; border-radius: 980px; text-decoration: none;
+      font-size: 14px; font-weight: 500; color: var(--fg);
+      justify-content: center; transition: background 0.2s;
+    }
+    .nav-drawer .drawer-install:hover { background: rgba(255,255,255,0.18); }
+
+    /* ━━━━━━━━━━━━━━━━━━━━ RESPONSIVE — TABLET (≤900px) ━━━━━━━━━━━━━━━━━━━━ */
     @media (max-width:900px) {
-      .nav-links { display:none; }
+      /* Nav */
+      .nav-links, .btn-nav { display:none; }
+      .nav-hamburger { display:block; }
+
+      /* Stats: 2×2 */
       .stats { grid-template-columns:repeat(2,1fr); }
       .stat:nth-child(2) { border-right:none; }
       .stat:nth-child(3),
       .stat:nth-child(4) { border-top:1px solid var(--border); }
       .stat:nth-child(4) { border-right:none; }
+      .stat { padding:32px 28px; }
+      .stat-n { font-size:clamp(32px,6vw,52px); }
+
+      /* Section padding */
       .s { padding:72px 24px; }
-      .ba,.feat-grid,.page-type-grid,.modes-grid,.format-grid,.install-steps { grid-template-columns:1fr; }
-      .workflow { flex-direction:column;gap:24px; }
+
+      /* Grids → single column */
+      .ba,.feat-grid,.page-type-grid,.modes-grid,.format-grid,.install-steps {
+        grid-template-columns:1fr;
+      }
+
+      /* Workflow */
+      .workflow { flex-direction:column; gap:24px; }
       .workflow::before { display:none; }
+
+      /* Graph */
       .graph-demo { height:300px; }
-      footer { padding:20px 24px;flex-direction:column;gap:12px;text-align:center; }
+
+      /* Commands: stack key + value vertically */
+      .cmd { flex-wrap:wrap; gap:6px 12px; padding:14px 20px; }
+      .cmd-k { min-width:0; width:100%; font-size:12px; }
+      .cmd-v { font-size:13px; }
+      .cmd-group-label { padding:8px 20px; }
+
+      /* Install box: make code scrollable, don't overflow */
+      .install-box { max-width:100%; overflow-x:auto; }
+      .install-code { font-size:11.5px; white-space:nowrap; }
+
+      /* Hero */
+      .hero-badges { justify-content:center; }
+
+      /* Footer */
+      footer { padding:20px 24px; flex-direction:column; gap:12px; text-align:center; }
+    }
+
+    /* ━━━━━━━━━━━━━━━━━━━━ RESPONSIVE — PHONE (≤640px) ━━━━━━━━━━━━━━━━━━━━ */
+    @media (max-width:640px) {
+      /* Hero */
+      .hero { padding:88px 20px 56px; text-align:center; }
+      .hero-inner { display:flex; flex-direction:column; align-items:center; }
+      .hero-eyebrow { margin-bottom:16px; }
+      .hero h1 { font-size:clamp(40px,11vw,64px); }
+      .hero-sub { font-size:16px; max-width:100%; }
+      .hero-badges { gap:6px; }
+      .badge { font-size:10px; padding:3px 8px; }
+
+      /* Install boxes: stack vertically, scroll horizontally */
+      .install-wrap { width:100%; padding:0 4px; }
+      .install-box {
+        width:100%; border-radius:10px;
+        flex-wrap:nowrap; overflow-x:auto;
+      }
+      .install-ps { padding:0 6px 0 14px; font-size:12px; }
+      .install-code { font-size:11px; padding:12px 0; }
+      .install-copy { padding:12px 14px; font-size:11px; }
+      .install-or { font-size:10px; }
+
+      /* Stats: single column */
+      .stats { grid-template-columns:1fr; }
+      .stat { border-right:none !important; padding:28px 20px; }
+      .stat:nth-child(n+2) { border-top:1px solid var(--border); }
+
+      /* Section */
+      .s { padding:56px 20px; }
+      .s-h { font-size:clamp(28px,8vw,40px); }
+      .s-p { font-size:15px; }
+      .s-eye { font-size:10px; }
+
+      /* Cards */
+      .feat { padding:24px 20px; }
+      .feat h3 { font-size:15px; }
+      .feat p { font-size:13px; }
+
+      /* BA cards */
+      .ba-card { border-radius:16px; }
+      .ba-row { padding:11px 16px; }
+      .ba-op { font-size:11px; }
+      .ba-val { font-size:11px; }
+      .ba-top { padding:12px 16px; }
+      .ba-tag { font-size:10px; }
+
+      /* Terminal */
+      .term { border-radius:16px; }
+      .term-body { padding:16px; font-size:11.5px; line-height:1.8; }
+      .term-chrome { padding:11px 14px; }
+
+      /* Mode cards */
+      .mode-card { padding:20px; }
+      .mode-name { font-size:12px; }
+      .mode-desc { font-size:12px; }
+      .mode-example { font-size:10px; }
+
+      /* Commands */
+      .cmd { padding:12px 16px; gap:4px; }
+      .cmd-k { font-size:11.5px; }
+      .cmd-v { font-size:12px; }
+      .cmd-group-label { padding:8px 16px; font-size:10px; }
+      .cmd-new { font-size:9px; padding:2px 6px; }
+
+      /* Page types */
+      .pt { padding:20px; border-radius:14px; }
+      .pt h4 { font-size:14px; }
+      .pt p { font-size:12px; }
+      .pt-field { font-size:10px; }
+
+      /* Formats */
+      .fmt { padding:20px; }
+      .fmt h4 { font-size:14px; }
+      .fmt p { font-size:12px; }
+
+      /* Install steps */
+      .is { padding:22px; border-radius:14px; }
+      .is h4 { font-size:14px; }
+      .is p { font-size:12px; }
+
+      /* Install-steps grid: already 1-col from 900 breakpoint */
+      .install-steps { grid-template-columns:1fr; }
+
+      /* CTA */
+      .cta { padding:80px 20px; }
+      .cta h2 { font-size:clamp(36px,9vw,64px); }
+      .cta p { font-size:16px; }
+
+      /* Provenance */
+      .prov-yaml { font-size:11px; padding:16px 18px; }
+      .prov-explain { font-size:12px; padding:12px 18px; }
+
+      /* Lint demo */
+      .lint-row { padding:12px 16px; gap:10px; }
+      .lint-title { font-size:12px; }
+      .lint-desc { font-size:11px; }
+
+      /* Footer */
+      footer { padding:20px; font-size:11px; }
+      footer .fl { gap:16px; }
+
+      /* Section term */
+      .term-name { font-size:10px; }
+
+      /* Hero mesh orbs: scale down */
+      .m1 { width:300px; height:200px; }
+      .m2 { width:200px; height:160px; }
+      .m3 { width:150px; height:150px; }
+      .m4 { display:none; }
+
+      /* Graph */
+      .graph-demo { height:240px; }
+      .graph-header { font-size:10px; padding:5px 10px; }
     }
   </style>
 </head>
@@ -446,7 +632,21 @@
     <li><a href="#commands">Commands</a></li>
   </ul>
   <a class="btn-nav" href="https://github.com/abhisekjha/pith" target="_blank">Install free</a>
+  <button class="nav-hamburger" id="nav-hamburger" aria-label="Open menu" aria-expanded="false">&#9776;</button>
 </nav>
+
+<!-- Mobile nav drawer -->
+<div class="nav-drawer" id="nav-drawer" role="navigation" aria-label="Mobile navigation">
+  <a href="#compression" onclick="closeDrawer()">Compression</a>
+  <a href="#layers"      onclick="closeDrawer()">Layers</a>
+  <a href="#adaptive"    onclick="closeDrawer()">Adaptive</a>
+  <a href="#wiki"        onclick="closeDrawer()">Wiki</a>
+  <a href="#graph"       onclick="closeDrawer()">Graph</a>
+  <a href="#provenance"  onclick="closeDrawer()">Provenance</a>
+  <a href="#session"     onclick="closeDrawer()">Sessions</a>
+  <a href="#commands"    onclick="closeDrawer()">Commands</a>
+  <a href="https://github.com/abhisekjha/pith" target="_blank" class="drawer-install">Install free →</a>
+</div>
 
 <!-- ━━━━━━━━━━━━━━━━━━━━ HERO ━━━━━━━━━━━━━━━━━━━━ -->
 <section class="hero">
@@ -1480,6 +1680,37 @@
 <!-- ━━━━━━━━━━━━━━━━━━━━ D3 DEMO GRAPH ━━━━━━━━━━━━━━━━━━━━ -->
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
+  // ── Mobile nav hamburger ──────────────────────────────────────────────────────
+  const hamburger = document.getElementById('nav-hamburger');
+  const drawer    = document.getElementById('nav-drawer');
+
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    hamburger.setAttribute('aria-expanded', 'false');
+    hamburger.innerHTML = '&#9776;';
+    document.body.style.overflow = '';
+  }
+
+  hamburger.addEventListener('click', () => {
+    const isOpen = drawer.classList.toggle('open');
+    hamburger.setAttribute('aria-expanded', isOpen);
+    hamburger.innerHTML = isOpen ? '&#10005;' : '&#9776;';
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+  });
+
+  // Close drawer when clicking outside
+  document.addEventListener('click', e => {
+    if (drawer.classList.contains('open') &&
+        !drawer.contains(e.target) && e.target !== hamburger) {
+      closeDrawer();
+    }
+  });
+
+  // Close drawer on scroll (user navigated)
+  window.addEventListener('scroll', () => {
+    if (drawer.classList.contains('open')) closeDrawer();
+  }, { passive: true });
+
   // ── Copy button ──────────────────────────────────────────────────────────────
   function cp(btn) {
     const cmd = btn.dataset.cmd || 'bash <(curl -s https://raw.githubusercontent.com/abhisekjha/pith/main/install.sh)';
