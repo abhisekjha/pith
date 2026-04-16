@@ -111,9 +111,15 @@ def main():
     actual_in_cost  = cost(inp,     IN_COST_PER_M)
     actual_out_cost = cost(out_tok, OUT_COST_PER_M)
     actual_cost     = actual_in_cost + actual_out_cost
-    # Savings cost = input tokens we avoided (most savings are input tokens re-read each turn)
-    saved_cost_val  = cost(t_saved, IN_COST_PER_M)
-    would_cost      = actual_cost + saved_cost_val
+
+    # Savings split by token type:
+    #   Tool compression saves INPUT tokens (results re-read each turn) → $3/1M
+    #   Output mode compression saves OUTPUT tokens → $15/1M (5× more valuable)
+    tool_saved_tokens = t_saved - out_s          # everything except output mode
+    saved_in_cost     = cost(tool_saved_tokens, IN_COST_PER_M)
+    saved_out_cost    = cost(out_s,             OUT_COST_PER_M)
+    saved_cost_val    = saved_in_cost + saved_out_cost
+    would_cost        = actual_cost + saved_cost_val
 
     # Threshold color for context bar
     pct_fill = round(fill * 100)
@@ -175,11 +181,16 @@ def main():
     # ── Cost ─────────────────────────────────────────────────────────────────
     print()
     print(f'  {DIM}Cost (this session){RESET}')
-    print(row('Tokens in',    f'{fmt(inp)} → {fmt_cost(actual_in_cost)}'))
-    print(row('Tokens out',   f'{fmt(out_tok)} → {fmt_cost(actual_out_cost)}'))
-    print(row('Actual spend', fmt_cost(actual_cost), YELLOW))
-    print(row('Cost saved',   fmt_cost(saved_cost_val),  GREEN + BOLD))
-    print(row('Without Pith', fmt_cost(would_cost),  RED))
+    print(row('Tokens in',     f'{fmt(inp)} → {fmt_cost(actual_in_cost)}'))
+    print(row('Tokens out',    f'{fmt(out_tok)} → {fmt_cost(actual_out_cost)}'))
+    print(row('Actual spend',  fmt_cost(actual_cost), YELLOW))
+    print()
+    if saved_in_cost > 0:
+        print(row('  Tool compress',  f'-{fmt(tool_saved_tokens)} tok  {fmt_cost(saved_in_cost)}', DIM))
+    if saved_out_cost > 0:
+        print(row('  Output mode',    f'-{fmt(out_s)} tok  {fmt_cost(saved_out_cost)}', DIM))
+    print(row('Cost saved',    fmt_cost(saved_cost_val), GREEN + BOLD))
+    print(row('Without Pith',  fmt_cost(would_cost),  RED))
 
     # ── Lifetime ──────────────────────────────────────────────────────────────
     lifetime_total = total + t_saved
