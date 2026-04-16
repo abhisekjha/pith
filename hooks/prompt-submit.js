@@ -267,6 +267,11 @@ Display this reference any time with: /pith help`
           );
         }
 
+      } else if (arg === 'reset-cache') {
+        // /pith reset-cache — force full session-start injection next session
+        saveProjectState({ session_injection_hash: null });
+        out.push('PITH: session cache cleared. Full rules will be injected on next session start.');
+
       } else if (arg === 'hindsight') {
         // /pith hindsight — retrospective stale context analysis
         out.push(runTool('hindsight.py', [], root));

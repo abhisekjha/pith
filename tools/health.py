@@ -131,6 +131,14 @@ def main():
     pct_str    = f'{pct_color}{pct_fill}%{RESET}' if pct_color else f'{pct_fill}%'
     model_str  = f'Sonnet 4.6  {DIM}(in ${IN_COST_PER_M}/1M · out ${OUT_COST_PER_M}/1M){RESET}'
 
+    # ── State-of-the-art metrics ──────────────────────────────────────────────
+    # Compression ratio: tokens_without / tokens_used  (e.g. 3.1:1)
+    comp_ratio  = round(without / inp, 1) if inp > 0 else None
+    # Cost ROI: cost_saved / actual_cost  (e.g. 4.2× — you get $4.20 back per $1 spent)
+    roi         = round(saved_cost_val / actual_cost, 1) if actual_cost > 0.00001 else None
+    # Context efficiency: how much MORE work fits vs without Pith
+    ctx_eff     = round(without / inp, 1) if inp > 0 else None   # same as comp_ratio
+
     print()
     print(f'  {PURPLE}{BOLD}◆ PITH{RESET}{DIM} · SESSION STATUS{RESET}')
     print(f'  {DIM}{"─" * 36}{RESET}')
@@ -140,9 +148,19 @@ def main():
     print(f'  {DIM}{"Budget":<16}{RESET}{budget_str}')
     print(f'  {DIM}{"Model":<16}{RESET}{model_str}')
 
+    # Key metrics row (only when we have real session data)
+    if t_saved > 0 and inp > 0:
+        print()
+        ratio_str = f'{GREEN}{BOLD}{comp_ratio}:1{RESET}' if comp_ratio else '—'
+        roi_str   = f'{GREEN}{BOLD}{roi}×{RESET}' if roi else '—'
+        pct_red   = pct
+        print(f'  {DIM}{"Compression ratio":<18}{RESET}{ratio_str}  '
+              f'{DIM}({pct_red}% fewer tokens — {fmt(t_saved)} saved of {fmt(without)} baseline){RESET}')
+        if roi:
+            print(f'  {DIM}{"Cost ROI":<18}{RESET}{roi_str}  '
+                  f'{DIM}({fmt_cost(saved_cost_val)} saved per {fmt_cost(actual_cost)} spent){RESET}')
+
     # ── Savings breakdown ─────────────────────────────────────────────────────
-    # Each bucket gets a mini bar showing its share of total saved tokens.
-    # This makes the breakdown legible and lets you see what's doing the most work.
     print()
     print(f'  {DIM}Savings this session  (without Pith: {fmt(without)} tokens){RESET}')
     print()

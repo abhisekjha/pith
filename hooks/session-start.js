@@ -19,6 +19,7 @@ const proj = loadProjectState();
 // Reset per-session counters
 saveProjectState({
   session_start:            new Date().toISOString(),
+  tokens_saved_session:     0,   // ← was missing — caused phantom 100% savings
   tool_savings_session:     0,
   toon_savings_session:     0,
   skeleton_savings_session: 0,
@@ -148,4 +149,31 @@ try {
   }
 } catch (e) { /* silent */ }
 
-process.stdout.write(output.filter(Boolean).join('\n\n---\n\n'));
+// ── Phase 9: Cache-Lock ──────────────────────────────────────────────────────
+// If the session-start content is identical to last session, emit a compact
+// 1-line summary instead of the full rules. Saves ~300 tokens per session start
+// on repeat sessions with unchanged settings.
+// Dynamic values (token counts, timestamps) must NEVER appear in `output` —
+// they belong in prompt-submit.js (user turn), not here (system context).
+const fullContent = output.filter(Boolean).join('\n\n---\n\n');
+if (fullContent) {
+  const crypto      = require('crypto');
+  const contentHash = crypto.createHash('md5').update(fullContent).digest('hex').slice(0, 8);
+  const lastHash    = proj.session_injection_hash;  // from OLD state (before session resets)
+
+  if (lastHash && lastHash === contentHash) {
+    // Repeat session — same settings → compact 1-line summary
+    const parts = [];
+    if (mode && mode !== 'off') parts.push(`mode=${mode.toUpperCase()}`);
+    if (proj.wiki_mode) parts.push('wiki=ON');
+    if (proj.budget)    parts.push(`budget=\u2264${proj.budget}`);
+    const summary = parts.length ? parts.join(' \u00b7 ') : 'no active settings';
+    process.stdout.write(
+      `[PITH: ${summary} \u2014 settings unchanged, full rules omitted to protect cache. /pith help for reference.]`
+    );
+  } else {
+    // New or changed settings — emit full content, save hash for next session
+    saveProjectState({ session_injection_hash: contentHash });
+    process.stdout.write(fullContent);
+  }
+}

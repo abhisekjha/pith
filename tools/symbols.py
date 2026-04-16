@@ -167,6 +167,67 @@ def _extract_block_indent(lines: list[str], start: int) -> list[str]:
     return block
 
 
+_PY_KEYWORDS = {
+    'if', 'else', 'elif', 'for', 'while', 'try', 'except', 'finally', 'with',
+    'return', 'yield', 'import', 'from', 'class', 'def', 'pass', 'break',
+    'continue', 'and', 'or', 'not', 'in', 'is', 'lambda', 'raise', 'assert',
+    'del', 'global', 'nonlocal', 'print', 'len', 'range', 'type', 'str', 'int',
+    'float', 'list', 'dict', 'set', 'tuple', 'bool', 'None', 'True', 'False',
+    'super', 'self', 'cls', 'open', 'enumerate', 'zip', 'map', 'filter',
+}
+_JS_KEYWORDS = {
+    'if', 'else', 'for', 'while', 'do', 'try', 'catch', 'finally', 'switch',
+    'case', 'return', 'yield', 'throw', 'new', 'delete', 'typeof', 'instanceof',
+    'const', 'let', 'var', 'function', 'class', 'import', 'export', 'from',
+    'await', 'async', 'this', 'super', 'true', 'false', 'null', 'undefined',
+    'console', 'require', 'module', 'exports', 'Promise', 'Array', 'Object',
+    'String', 'Number', 'Boolean', 'Math', 'JSON', 'Error', 'Set', 'Map',
+}
+
+
+def _speculative_callees(all_lines: list[str], body_lines: list[str],
+                         ext: str, symbol_name: str) -> list[str]:
+    """
+    Phase 10 — Speculative Fetch.
+    Scan the extracted body for function calls that exist as symbols in the
+    same file. Return their signatures so Claude doesn't need a follow-up turn.
+    Capped at 5 callees and skips the symbol itself.
+    """
+    keywords = _PY_KEYWORDS if ext == 'py' else _JS_KEYWORDS
+    calls: set[str] = set()
+    for line in body_lines:
+        for m in re.finditer(r'\b([a-zA-Z_]\w+)\s*\(', line):
+            name = m.group(1)
+            if (name not in keywords
+                    and name != symbol_name
+                    and not name[0].isupper()   # skip class instantiations
+                    and len(name) > 2):
+                calls.add(name)
+
+    if not calls:
+        return []
+
+    found: list[tuple[int, str]] = []
+    seen:  set[str]              = set()
+    for name in sorted(calls):
+        if name in seen:
+            continue
+        start = _find_start(all_lines, name, ext)
+        if start is not None:
+            sig = all_lines[start].rstrip()
+            # For Python, grab first docstring line too
+            if ext == 'py' and start + 1 < len(all_lines):
+                nxt = all_lines[start + 1].strip()
+                if nxt.startswith('"""') or nxt.startswith("'''"):
+                    sig += f'  # {nxt.strip(chr(34)).strip(chr(39)).strip()[:60]}'
+            found.append((start + 1, sig))
+            seen.add(name)
+        if len(found) >= 5:
+            break
+
+    return [f'  {ln:4}  {sig}' for ln, sig in found]
+
+
 def find_symbol(file_path: str, symbol_name: str) -> str:
     path = Path(file_path)
     if not path.exists():
@@ -201,11 +262,22 @@ def find_symbol(file_path: str, symbol_name: str) -> str:
 
     end_line = start + len(block)
     numbered = '\n'.join(f'{start+1+i:4}  {l}' for i, l in enumerate(block))
+
+    # Phase 10 — Speculative Fetch: append called-symbol signatures
+    callees = _speculative_callees(lines, block, ext, symbol_name)
+    speculative = ''
+    if callees:
+        speculative = (
+            f'\n\n[PITH SPECULATIVE — functions called in {symbol_name} (same file):]\n'
+            + '\n'.join(callees)
+        )
+
     return (
         f'[PITH SYMBOL: {symbol_name} in {path.name} '
         f'(lines {start+1}–{end_line}, regex)]\n\n'
-        + numbered +
-        f'\n\n[Full file has {len(lines)} lines — use symbols --list {file_path} to see all symbols]'
+        + numbered
+        + speculative
+        + f'\n\n[Full file: {len(lines)} lines — /pith symbol --list {file_path} to see all]'
     )
 
 
