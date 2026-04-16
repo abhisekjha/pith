@@ -139,6 +139,51 @@ process.stdin.on('end', () => {
       } else if (arg === 'optimize-cache') {
         out.push(optimizeCache(root));
 
+      } else if (arg === 'help' || arg === 'commands') {
+        out.push(
+`PITH COMMAND REFERENCE
+
+── Output Compression ──────────────────────────────────────────
+  /pith lean             Fragment-style responses, drop articles
+  /pith precise          Full sentences, drop filler/hedging
+  /pith ultra            Max compression, abbreviate, use tables
+  /pith off              Deactivate compression
+  /pith on               Restore last saved mode
+
+── Structured Formats ──────────────────────────────────────────
+  /pith debug            Structured bug diagnosis format
+  /pith review           Code review format
+  /pith arch             Architecture discussion format
+  /pith plan             Step-by-step planning format
+  /pith commit           Commit message generation format
+
+── Wiki ────────────────────────────────────────────────────────
+  /pith wiki             Toggle wiki mode on/off
+  /pith wiki "<q>"       Query the project wiki
+  /pith ingest <file>    Add a file/source to the wiki
+  /pith lint             Run wiki guard/lint check
+
+── Token & Focus ───────────────────────────────────────────────
+  /pith budget <n>       Set hard token limit for responses
+  /pith budget off       Clear token budget
+  /pith focus <file>     Focus context on a specific file
+
+── Session & Config ────────────────────────────────────────────
+  /pith status           Token usage health report
+  /pith recall           Restore last session's mode/wiki/budget
+  /pith configure        Interactive config wizard
+  /pith tour             7-step interactive guided tour
+  /pith tour <1-7>       Jump to a specific tour step
+  /pith setup            Reset and re-run onboarding
+  /pith optimize-cache   Restructure CLAUDE.md for prompt caching
+
+── Install ─────────────────────────────────────────────────────
+  /pith install          Install Pith into this project
+  /pith uninstall        Remove Pith from this project
+
+Display this reference any time with: /pith help`
+        );
+
       } else if (arg === 'budget') {
         // /pith budget <n|off> — alias for /budget
         const budgetArg = (rest || '').toLowerCase();
