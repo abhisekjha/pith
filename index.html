@@ -1079,6 +1079,16 @@
       <h3>Clean uninstall</h3>
       <p><code style="font-family:var(--mono);font-size:11px">/pith uninstall</code> removes hooks, slash commands, and all <code style="font-family:var(--mono);font-size:11px">settings.json</code> entries cleanly. Asks for confirmation first. Your project wikis and lifetime token history are preserved unless you explicitly request a full wipe.</p>
     </div>
+    <div class="feat">
+      <div class="feat-n">13</div>
+      <h3>Symbol extractor</h3>
+      <p>Jump directly to any function, class, or method with <code style="font-family:var(--mono);font-size:11px">/pith symbol &lt;file&gt; &lt;name&gt;</code>. Returns the exact 30–50 lines of the definition — ~95% fewer tokens than reading the full file. Uses tree-sitter AST when available, regex fallback otherwise. Supports Python, TS/JS, Go, and more.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">14</div>
+      <h3>Tool result offloading</h3>
+      <p>Tool outputs that exceed 300 tokens after compression are automatically written to <code style="font-family:var(--mono);font-size:11px">~/.pith/tmp/</code> and replaced with a 3-line pointer in context. Claude can read them on demand — nothing is lost, but large payloads never bloat the context window. Offloaded bytes tracked in <code style="font-family:var(--mono);font-size:11px">/pith status</code>.</p>
+    </div>
   </div>
 </div>
 
@@ -1246,6 +1256,19 @@
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith help</span></span><span class="cmd-v">Full command reference — every command grouped by category, in one shot</span><span class="cmd-new">New</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith tour</span></span><span class="cmd-v">Interactive guided tour of every Pith feature — resumable, skippable</span></div>
       <div class="cmd"><span class="cmd-k"><span class="hl">/pith setup</span></span><span class="cmd-v">Run first-session wiki onboarding in any project</span></div>
+    </div>
+
+    <div class="cmd-grid" style="margin-top:2px">
+      <div class="cmd-group-label">Code navigation</div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith symbol &lt;file&gt; &lt;name&gt;</span></span><span class="cmd-v">Extract exact source lines for a named function, class, or method (~95% token reduction)</span><span class="cmd-new">New</span></div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith symbol --list &lt;file&gt;</span></span><span class="cmd-v">List all top-level symbols in a file with line numbers</span><span class="cmd-new">New</span></div>
+    </div>
+
+    <div class="cmd-grid" style="margin-top:2px">
+      <div class="cmd-group-label">Integrations</div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith grepai</span></span><span class="cmd-v">Show GrepAI status — whether it's installed and the wiki index is ready</span><span class="cmd-new">New</span></div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith grepai skip</span></span><span class="cmd-v">Dismiss the GrepAI install nudge permanently for this project</span><span class="cmd-new">New</span></div>
+      <div class="cmd"><span class="cmd-k"><span class="hl">/pith grepai enable</span></span><span class="cmd-v">Re-enable the GrepAI nudge if previously dismissed</span><span class="cmd-new">New</span></div>
     </div>
 
     <div class="cmd-grid" style="margin-top:2px">
