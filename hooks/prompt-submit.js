@@ -29,7 +29,10 @@ function syncTranscriptTokens(data) {
 
     if (!transcriptPath || !fs.existsSync(transcriptPath)) return;
 
-    let outputTokens = 0, inputTokens = 0;
+    // Output: sum all turns (each turn's output is independent)
+    // Input:  use ONLY the latest assistant entry — each turn's input already
+    //         includes full conversation history, so summing causes massive double-count
+    let outputTokens = 0, latestInputTokens = 0;
     const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -38,20 +41,20 @@ function syncTranscriptTokens(data) {
         if (d.type === 'assistant' && d.message && d.message.usage) {
           const u = d.message.usage;
           outputTokens += u.output_tokens || 0;
-          inputTokens  += (u.input_tokens || 0)
-                        + (u.cache_read_input_tokens || 0)
-                        + (u.cache_creation_input_tokens || 0);
+          // Overwrite each time — last entry wins (= current context size)
+          latestInputTokens = (u.input_tokens || 0)
+                            + (u.cache_read_input_tokens || 0)
+                            + (u.cache_creation_input_tokens || 0);
         }
       } catch (_) { /* skip malformed line */ }
     }
 
-    if (outputTokens > 0 || inputTokens > 0) {
+    if (outputTokens > 0 || latestInputTokens > 0) {
       saveProjectState({
         output_tokens_est:    outputTokens,
         output_tokens_actual: outputTokens,
-        // Only override input estimate if transcript gives a higher value
-        // (post-tool-use hook adds compression savings on top; don't clobber)
-        ...(inputTokens > 0 ? { input_tokens_est: inputTokens } : {}),
+        // input = current context window size (latest turn only)
+        ...(latestInputTokens > 0 ? { input_tokens_est: latestInputTokens } : {}),
       });
     }
   } catch (_) { /* silent — never block a session */ }

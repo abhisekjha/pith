@@ -7,9 +7,11 @@
 const fs = require('fs');
 const { loadProjectState, saveProjectState } = require('./config');
 
-// Sum output_tokens and input_tokens from all assistant entries in a transcript JSONL.
+// Read token counts from transcript JSONL.
+// output = sum of all turns (each turn's output is independent)
+// input  = latest assistant entry only (each turn's input includes full history → summing double-counts)
 function readTranscriptTokens(transcriptPath) {
-  let outputTokens = 0, inputTokens = 0;
+  let outputTokens = 0, latestInputTokens = 0;
   try {
     const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
     for (const line of lines) {
@@ -19,14 +21,14 @@ function readTranscriptTokens(transcriptPath) {
         if (d.type === 'assistant' && d.message && d.message.usage) {
           const u = d.message.usage;
           outputTokens += u.output_tokens || 0;
-          inputTokens  += (u.input_tokens || 0)
-                        + (u.cache_read_input_tokens || 0)
-                        + (u.cache_creation_input_tokens || 0);
+          latestInputTokens = (u.input_tokens || 0)
+                            + (u.cache_read_input_tokens || 0)
+                            + (u.cache_creation_input_tokens || 0);
         }
       } catch (_) { /* skip malformed line */ }
     }
   } catch (_) { /* file unreadable — caller falls back */ }
-  return { outputTokens, inputTokens };
+  return { outputTokens, inputTokens: latestInputTokens };
 }
 
 let raw = '';
