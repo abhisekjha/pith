@@ -84,8 +84,8 @@ One command. Hooks install globally into `~/.claude/hooks/`. Every session from 
 
 **Token status**
 ```
-/pith status    → ASCII token flow chart — baseline vs compressed vs output
-/pith report    → interactive HTML dashboard (~/.pith/report.html)
+/pith status    → ASCII token flow chart — baseline vs compressed vs output + plain-English savings insight
+/pith report    → interactive HTML dashboard (~/.pith/report.html) — auto-refreshes every 30s
 ```
 
 ![/pith status — token flow chart, compression ratio, cost breakdown](assets/status-screenshot-v1.1.png)

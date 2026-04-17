@@ -15,8 +15,8 @@
 
 | Command | What it does |
 |---------|-------------|
-| `/pith status` | ASCII token flow chart + health report |
-| `/pith report` | Interactive HTML dashboard (opens in browser) |
+| `/pith status` | ASCII token flow chart + health report with plain-English savings insight |
+| `/pith report` | Interactive HTML dashboard (opens in browser, auto-refreshes every 30s) |
 | `/pith hindsight` | Identify stale tool results, recommend /compact |
 | `/pith escalate` | Show auto-escalation status and thresholds |
 | `/pith budget <N>` | Hard token ceiling per response |
@@ -42,7 +42,7 @@
 |---------|-------------|
 | `/pith symbol <file> <name>` | Extract exact source lines (~95% fewer tokens vs full file) |
 | `/pith symbol --list <file>` | List all top-level symbols with line numbers |
-| `/pith focus <file>` | Load only sections relevant to current question |
+| `/pith focus <file>` | Load only sections relevant to current question (restricted to project directory) |
 
 ## Wiki
 
@@ -74,6 +74,7 @@
 |---------|-------------|
 | `/pith install` | Install Pith into Claude Code |
 | `/pith uninstall` | Remove Pith cleanly |
+| `/pith update` | Pull latest Pith version, re-sync all hooks and settings |
 | `/pith setup` | Re-run first-session onboarding |
 | `/pith optimize-cache` | Restructure CLAUDE.md for prompt caching |
 | `/pith help` | This reference, inline |
