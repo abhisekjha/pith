@@ -112,7 +112,7 @@ Uses tree-sitter AST when available, regex fallback otherwise. Supports Python, 
 /pith hindsight → manual hindsight analysis, anytime
 ```
 
-![/pith status — token flow chart, compression ratio, cost breakdown](assets/status-screenshot.png)
+![/pith status — token flow chart, compression ratio, cost breakdown](assets/status-screenshot-v1.1.png)
 
 **Structured formats** — each answer fits a template, no prose waste
 ```
