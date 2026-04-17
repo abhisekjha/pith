@@ -209,6 +209,7 @@ new Chart(document.getElementById('timeline'), {{
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="refresh" content="30" />
 <title>Pith Session Report</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
@@ -616,7 +617,7 @@ nav {{
 
 <footer class="page-footer r">
   <span>◆ Pith Session Report &nbsp;·&nbsp; {session_date}</span>
-  <span>Run <code style="font-family:var(--mono);opacity:0.5">/pith report</code> to refresh &nbsp;·&nbsp; <code style="font-family:var(--mono);opacity:0.5">/pith status</code> for terminal view</span>
+  <span>Auto-refreshes every 30s &nbsp;·&nbsp; <code style="font-family:var(--mono);opacity:0.5">/pith status</code> for terminal view</span>
 </footer>
 
 <script>
