@@ -6,9 +6,14 @@ Run the Pith budget hook and apply the token ceiling.
 
 **Argument:** $ARGUMENTS
 
-Step 1 — execute the hook:
+Step 1 — execute the hook. The argument is forwarded literally via a
+single-quoted heredoc, so quotes/$()/backticks in input never reach the
+shell:
+
 ```bash
-echo '{"prompt":"/budget $ARGUMENTS"}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/prompt-submit.js"
+node "${CLAUDE_PLUGIN_ROOT}/hooks/prompt-submit.js" --slash /budget <<'PITH_EOF_7f3a9c2e'
+$ARGUMENTS
+PITH_EOF_7f3a9c2e
 ```
 
 Step 2 — apply the result:
