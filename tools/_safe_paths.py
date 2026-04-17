@@ -46,8 +46,11 @@ def safe_wiki_path(cwd: Path, rel: object, wiki_subdir: str = "wiki") -> Path:
     except ValueError as exc:
         raise UnsafePathError(f"page path escapes {wiki_subdir}/: {rel!r}") from exc
 
-    # A candidate that already exists as a symlink pointing outside would be
-    # re-resolved by `.resolve()`, but belt-and-suspenders: reject lsymlinks.
+    # `.resolve()` above already follows symlinks, so intermediate directory
+    # symlinks that escape the wiki root are already caught by relative_to().
+    # This check covers the narrow case where `candidate` itself exists as a
+    # symlink at the resolved path (e.g. a wiki-internal symlink added manually)
+    # — we refuse to overwrite through it even if the target is inside the wiki.
     if candidate.is_symlink():
         raise UnsafePathError(f"refusing to write through a symlink: {rel!r}")
 
