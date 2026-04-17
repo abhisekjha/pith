@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { loadConfig, loadProjectState, saveProjectState, pluginRoot } = require('./config');
 
 const OUTPUT_MODES = new Set(['lean', 'precise', 'ultra', 'off']);
@@ -60,11 +60,36 @@ function syncTranscriptTokens(data) {
   } catch (_) { /* silent — never block a session */ }
 }
 
+// Parse optional --slash <prefix> flag. When set, stdin is treated as the
+// raw argument text (not JSON), and the prompt is built internally as
+// `${prefix} ${stdin}`. This lets slash-command .md files pipe user arguments
+// in via a heredoc instead of embedding them into a shell-quoted JSON string,
+// which eliminates shell-injection via quotes/$()/backticks in user input.
+const argv = process.argv.slice(2);
+let slashPrefix = null;
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--slash' && i + 1 < argv.length) {
+    slashPrefix = argv[i + 1];
+    if (!/^\/[A-Za-z0-9_-]+$/.test(slashPrefix)) {
+      process.stderr.write('[PITH: --slash prefix must match /[A-Za-z0-9_-]+]\n');
+      process.exit(2);
+    }
+    i++;
+  }
+}
+
 let raw = '';
 process.stdin.on('data', c => { raw += c; });
 process.stdin.on('end', () => {
   try {
-    const data   = JSON.parse(raw);
+    let data;
+    if (slashPrefix) {
+      // stdin is raw user-typed argument text; strip one trailing newline
+      const args = raw.replace(/\n$/, '');
+      data = { prompt: args ? `${slashPrefix} ${args}` : slashPrefix };
+    } else {
+      data = JSON.parse(raw);
+    }
     const prompt = (data.prompt || '').trim();
     const lower  = prompt.toLowerCase();
     const config = loadConfig();
@@ -182,9 +207,9 @@ process.stdin.on('end', () => {
         // /pith tour [step-number] — interactive guided tour
         const stepArg = rest ? parseInt(rest, 10) : null;
         const tourAction = (!isNaN(stepArg) && stepArg >= 1 && stepArg <= 7)
-          ? `--step ${stepArg} --action set`
-          : '--action get';
-        out.push(runTool('tour.py', [], root, tourAction) + '\n\n' + loadTourSkill(root));
+          ? ['--step', String(stepArg), '--action', 'set']
+          : ['--action', 'get'];
+        out.push(runTool('tour.py', tourAction, root) + '\n\n' + loadTourSkill(root));
 
       } else if (arg === 'setup') {
         // Re-run onboarding
@@ -530,15 +555,31 @@ function optimizeCache(root) {
   }
 }
 
+// Runs a bundled Python tool via execFile (no shell) so user-controlled
+// arguments can never be interpreted as shell syntax. `extraArgs` may be an
+// array of argv strings or a whitespace-delimited string; both are treated as
+// literal argv tokens, never evaluated by a shell.
 function runTool(script, args, root, extraArgs) {
   try {
     const toolPath = path.join(root, 'tools', script);
     if (!fs.existsSync(toolPath)) return `[PITH: tool ${script} not found]`;
-    const escaped = args.map(a => `"${String(a).replace(/"/g, '\\"')}"`).join(' ');
-    const cmd = `python3 "${toolPath}" ${escaped}${extraArgs ? ' ' + extraArgs : ''}`;
-    return execSync(cmd, { timeout: 30000, encoding: 'utf8', cwd: process.env.CLAUDE_CWD || process.cwd() }).trim();
+    const argv = [toolPath, ...args.map(a => String(a))];
+    if (extraArgs) {
+      const extras = Array.isArray(extraArgs)
+        ? extraArgs.map(String)
+        : String(extraArgs).split(/\s+/).filter(Boolean);
+      argv.push(...extras);
+    }
+    return execFileSync('python3', argv, {
+      timeout: 30000,
+      encoding: 'utf8',
+      cwd: process.env.CLAUDE_CWD || process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 8 * 1024 * 1024,
+    }).trim();
   } catch (e) {
-    return `[PITH: ${script} failed — ${(e.stderr || e.message || '').slice(0, 200)}]`;
+    const msg = (e.stderr && e.stderr.toString ? e.stderr.toString() : '') || e.message || '';
+    return `[PITH: ${script} failed — ${msg.slice(0, 200)}]`;
   }
 }
 

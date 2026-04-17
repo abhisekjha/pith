@@ -1,78 +1,64 @@
 #!/usr/bin/env bash
-# Pith statusline — fast badge for Claude Code statusline
+# Pith statusline — fast badge for Claude Code statusline.
 # Output: "PITH 12k/200k" or "PITH:LEAN 12k/200k" or "PITH:WIKI 12k/200k"
-# Uses only grep+awk — no python3 overhead on every keypress
+#
+# Single python3 invocation per keypress (down from three). The state path
+# and project key are passed as argv — never interpolated into `python3 -c`
+# literals — so unusual $HOME / cwd characters can't break the script.
 
 STATE="${HOME}/.pith/state.json"
 [ ! -f "$STATE" ] && echo "PITH" && exit 0
 
-# Extract current project key (base64 of cwd, first 20 chars of alphanum)
-CWD_KEY=$(echo -n "$(pwd)" | base64 | tr -d '/+=\n' | cut -c1-20)
+# Derive project key from cwd. Base64 + strip non-alnum keeps this safe to
+# pass as argv (no quoting hazard) and reproducible.
+CWD_KEY=$(printf '%s' "$PWD" | base64 | tr -d '/+=\n' | cut -c1-20)
 PROJ_KEY="proj_${CWD_KEY}"
 
-# Fast JSON extraction with grep
-get_field() {
-  grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$STATE" 2>/dev/null | \
-    head -1 | sed 's/.*: *"//' | tr -d '"'
-}
-
-get_num() {
-  grep -o "\"$1\"[[:space:]]*:[[:space:]]*[0-9]*" "$STATE" 2>/dev/null | \
-    head -1 | grep -o '[0-9]*$'
-}
-
-MODE=$(python3 -c "
+# Single python call returns a TAB-separated tuple: mode, wiki, tokens, pct.
+# If anything goes wrong it prints safe defaults so the badge still renders.
+read -r MODE WIKI TOKENS PCT < <(
+  python3 - "$STATE" "$PROJ_KEY" <<'PY' 2>/dev/null || printf 'off\t0\t0\t0\n'
 import json, sys
 try:
-  d = json.load(open('$STATE'))
-  proj = d.get('$PROJ_KEY', {})
-  print(proj.get('mode', 'off'))
-except: print('off')
-" 2>/dev/null || echo 'off')
+    state_path, key = sys.argv[1], sys.argv[2]
+    with open(state_path) as f:
+        d = json.load(f)
+    proj = d.get(key) or {}
+    mode = proj.get("mode") or "off"
+    wiki = "1" if proj.get("wiki_mode") else "0"
+    tokens = int(proj.get("input_tokens_est", 0) or 0)
+    saved  = int(proj.get("tool_savings_session", 0) or 0)
+    total  = tokens + saved
+    pct    = round(saved / total * 100) if total > 0 else 0
+    print(f"{mode}\t{wiki}\t{tokens}\t{pct}")
+except Exception:
+    print("off\t0\t0\t0")
+PY
+)
 
-WIKI=$(python3 -c "
-import json, sys
-try:
-  d = json.load(open('$STATE'))
-  proj = d.get('$PROJ_KEY', {})
-  print('1' if proj.get('wiki_mode') else '0')
-except: print('0')
-" 2>/dev/null || echo '0')
+# Defaults for read's output (if the here-doc produced nothing at all).
+MODE="${MODE:-off}"
+WIKI="${WIKI:-0}"
+TOKENS="${TOKENS:-0}"
+PCT="${PCT:-0}"
 
-STATS=$(python3 -c "
-import json, sys
-try:
-  d = json.load(open('$STATE'))
-  proj = d.get('$PROJ_KEY', {})
-  t     = proj.get('input_tokens_est', 0)
-  saved = proj.get('tool_savings_session', 0)
-  total = t + saved
-  pct   = round(saved / total * 100) if total > 0 else 0
-  print(t, pct)
-except: print(0, 0)
-" 2>/dev/null || echo '0 0')
-
-TOKENS=$(echo "$STATS" | awk '{print $1}')
-PCT=$(echo "$STATS" | awk '{print $2}')
-
-# Format token count
-if [ "${TOKENS:-0}" -ge 1000 ] 2>/dev/null; then
-  TOKENS_FMT="$(( ${TOKENS} / 1000 ))k"
+# Format token count (e.g. 12345 → 12k).
+if [ "${TOKENS}" -ge 1000 ] 2>/dev/null; then
+  TOKENS_FMT="$(( TOKENS / 1000 ))k"
 else
-  TOKENS_FMT="${TOKENS:-0}"
+  TOKENS_FMT="${TOKENS}"
 fi
 
-# Build badge
+# Build badge suffix: wiki > mode > nothing.
 if [ "$WIKI" = "1" ]; then
   SUFFIX=":WIKI"
 elif [ "$MODE" != "off" ] && [ -n "$MODE" ]; then
-  SUFFIX=":$(echo "$MODE" | tr '[:lower:]' '[:upper:]')"
+  SUFFIX=":$(printf '%s' "$MODE" | tr '[:lower:]' '[:upper:]')"
 else
   SUFFIX=""
 fi
 
-# Show compression ratio if nonzero
-if [ "${PCT:-0}" -gt 0 ] 2>/dev/null; then
+if [ "${PCT}" -gt 0 ] 2>/dev/null; then
   echo "PITH${SUFFIX} ↓${PCT}% ${TOKENS_FMT}/200k"
 else
   echo "PITH${SUFFIX} ${TOKENS_FMT}/200k"

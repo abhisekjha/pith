@@ -114,11 +114,24 @@ def focus(filepath: Path, question: str, top_k: int = 5) -> str:
 def main():
     import os
     p = argparse.ArgumentParser()
-    p.add_argument('filepath')
+    p.add_argument('filepath', nargs='?')
+    p.add_argument('--stdin-path', action='store_true',
+                   help='Read filepath from stdin (first line). Used by the /focus '
+                        'slash-command to bypass shell-argument quoting entirely.')
     p.add_argument('--question', '-q', default='')
     p.add_argument('--top', '-k', type=int, default=5)
     args = p.parse_args()
-    filepath = Path(args.filepath).resolve()
+    if args.stdin_path:
+        raw = sys.stdin.read().strip().splitlines()
+        if not raw:
+            print('[PITH FOCUS: no path on stdin]')
+            return
+        filepath = raw[0].strip()
+    else:
+        filepath = args.filepath
+    if not filepath:
+        p.error('filepath is required (positional, or via --stdin-path)')
+    filepath = Path(filepath).resolve()
     cwd = Path(os.environ.get('CLAUDE_CWD') or os.getcwd()).resolve()
     if not str(filepath).startswith(str(cwd)):
         print(f"[PITH FOCUS: access denied — {filepath.name} is outside the project directory]")
