@@ -100,18 +100,6 @@ def pct_bar(n: int, total: int, w: int = 12) -> str:
     return f'{DIM}{"▪" * filled}{"·" * (w - filled)}{RESET}'
 
 
-def split_bar(tool_n: int, out_n: int, w: int = 32) -> str:
-    """Stacked bar: tool compression (purple) | output mode (green) | empty (dim)."""
-    total = tool_n + out_n
-    if total <= 0:
-        return f'{DIM}{"·" * w}{RESET}'
-    tool_w = min(round(tool_n / total * w), w)
-    out_w  = min(round(out_n  / total * w), w - tool_w)
-    rest   = w - tool_w - out_w
-    return (f'{PURPLE}{"█" * tool_w}{RESET}'
-            f'{GREEN}{"█" * out_w}{RESET}'
-            f'{DIM}{"░" * rest}{RESET}')
-
 
 def flow_chart(inp: int, out_tok: int, t_saved: int, without: int, limit: int) -> str:
     """ASCII token flow diagram — baseline vs actual vs output."""
@@ -279,14 +267,24 @@ def main():
               f'{GREEN}{BOLD}{fmt(total_saved)} tokens  ({pct}% of what this session would have used){RESET}')
         print(f'  {DIM}{"Actual used":<16}{RESET}  {fmt(inp)} tokens  '
               f'{DIM}({100 - pct}% of uncompressed baseline){RESET}')
-        # Stacked split bar: tool compression (purple) | output mode (green)
-        bar_str = split_bar(t_saved, out_s)
-        tool_pct = round(t_saved / total_saved * 100) if total_saved else 0
-        out_pct2 = round(out_s  / total_saved * 100) if total_saved else 0
-        print()
-        print(f'  {DIM}{"Savings split":<16}{RESET}{bar_str}')
-        print(f'  {PURPLE}{"  ■ tool compress":<20}{RESET}{DIM}{fmt(t_saved):>6} tok  {tool_pct}%{RESET}  '
-              f'  {GREEN}{"■ output mode":<20}{RESET}{DIM}{fmt(out_s):>6} tok  {out_pct2}%{RESET}')
+        # One-line plain-English insight
+        if t_saved > 0 and out_s > 0:
+            dominant = 'output mode' if out_s >= t_saved else 'tool compression'
+            dom_pct  = round(max(out_s, t_saved) / total_saved * 100) if total_saved else 0
+            mode_label = mode.upper()
+            insight = f'{dominant} driving {dom_pct}% of savings'
+            if dominant == 'output mode':
+                insight += f' — {mode_label} active'
+            else:
+                insight += ' — hooks doing the heavy lifting'
+        elif out_s > 0:
+            insight = f'output mode ({proj.get("mode","off").upper()}) is your only active savings — try /pith focus or reading large files to trigger tool compression'
+        elif t_saved > 0:
+            insight = f'tool compression active — enable /pith lean or ultra to also compress responses'
+        else:
+            insight = ''
+        if insight:
+            print(f'  {DIM}{"  →":<16}{RESET}{DIM}{insight}{RESET}')
     else:
         print(f'  {DIM}No savings recorded yet — tool compression fires on first tool call.{RESET}')
 
