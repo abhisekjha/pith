@@ -91,8 +91,8 @@ def safe_fetch(url: str) -> tuple[bytes, str]:
 
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        status = getattr(resp, "status", 200)
-        if status and status >= 400:
+        status = getattr(resp, "status", None)
+        if status is not None and status >= 400:
             raise UnsafeFetchError(f"HTTP {status}")
         body = resp.read(_MAX_BYTES + 1)
         if len(body) > _MAX_BYTES:

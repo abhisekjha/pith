@@ -150,8 +150,13 @@ process.stdin.on('end', () => {
           before_tokens: beforeTokens,
           after_tokens:  afterTokens,
           saved_pct:     Math.round(savedTokens / beforeTokens * 100),
-          before_head:   lines.slice(0, 3).join('\n'),
-          after_head:    compressed.split('\n').slice(0, 3).join('\n'),
+          // before_head / after_head (first 3 lines of file/bash output) are
+          // omitted by default — they can capture secrets from `cat .env`,
+          // `env | grep TOKEN`, etc. Set PITH_TELEMETRY_VERBOSE=1 to re-enable.
+          ...(process.env.PITH_TELEMETRY_VERBOSE === '1' ? {
+            before_head: lines.slice(0, 3).join('\n'),
+            after_head:  compressed.split('\n').slice(0, 3).join('\n'),
+          } : {}),
         };
         fs.appendFileSync(require('path').join(pDir, 'telemetry.jsonl'), JSON.stringify(entry) + '\n');
       } catch (e) { /* never block */ }

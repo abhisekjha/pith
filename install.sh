@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
+# Pinned version — installer clones this exact tag, not a moving branch.
+# Update this when cutting a release; callers get a consistent SHA.
+PITH_VERSION="${PITH_VERSION:-main}"
+
 # ── Self-clone when piped via curl ────────────────────────────────────────────
 # bash <(curl -s ...) sets BASH_SOURCE[0] to /dev/fd/<n> — there are no
 # hook files there.  Detect this and clone to a stable location, then re-exec.
@@ -8,12 +12,14 @@ _src="${BASH_SOURCE[0]}"
 if [[ "$_src" == /dev/fd/* ]] || [[ "$_src" == /proc/*/fd/* ]] || [[ "$_src" == "" ]]; then
   INSTALL_SRC="${HOME}/.local/share/pith"
   echo ""
-  echo "Detected curl-pipe install — cloning repo to ${INSTALL_SRC}..."
+  echo "Detected curl-pipe install — cloning repo to ${INSTALL_SRC} (${PITH_VERSION})..."
   mkdir -p "$(dirname "${INSTALL_SRC}")"
   if [ -d "${INSTALL_SRC}/.git" ]; then
-    git -C "${INSTALL_SRC}" pull --quiet --ff-only
+    git -C "${INSTALL_SRC}" fetch --quiet --tags
+    git -C "${INSTALL_SRC}" checkout --quiet "${PITH_VERSION}"
   else
-    git clone --depth=1 --quiet https://github.com/abhisekjha/pith.git "${INSTALL_SRC}"
+    git clone --depth=1 --branch "${PITH_VERSION}" --quiet \
+      https://github.com/abhisekjha/pith.git "${INSTALL_SRC}"
   fi
   exec bash "${INSTALL_SRC}/install.sh"
 fi
