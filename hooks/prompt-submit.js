@@ -12,6 +12,51 @@ const OUTPUT_MODES = new Set(['lean', 'precise', 'ultra', 'off']);
 // Subcommands handled entirely by Claude Code skill files — hook just skips them
 const SKILL_CMDS   = new Set(['debug', 'review', 'arch', 'plan', 'commit', 'install', 'uninstall']);
 
+// Read actual token counts from the current session's transcript JSONL.
+// transcript_path may be provided by Claude Code; if not, we derive it from session_id + cwd.
+function syncTranscriptTokens(data) {
+  try {
+    const os = require('os');
+    let transcriptPath = data.transcript_path;
+
+    if (!transcriptPath && data.session_id) {
+      const cwd  = data.cwd || process.env.CLAUDE_CWD || process.cwd();
+      const slug = cwd.replace(/\//g, '-');
+      const dir  = path.join(os.homedir(), '.claude', 'projects', slug);
+      const file = path.join(dir, `${data.session_id}.jsonl`);
+      if (fs.existsSync(file)) transcriptPath = file;
+    }
+
+    if (!transcriptPath || !fs.existsSync(transcriptPath)) return;
+
+    let outputTokens = 0, inputTokens = 0;
+    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const d = JSON.parse(line);
+        if (d.type === 'assistant' && d.message && d.message.usage) {
+          const u = d.message.usage;
+          outputTokens += u.output_tokens || 0;
+          inputTokens  += (u.input_tokens || 0)
+                        + (u.cache_read_input_tokens || 0)
+                        + (u.cache_creation_input_tokens || 0);
+        }
+      } catch (_) { /* skip malformed line */ }
+    }
+
+    if (outputTokens > 0 || inputTokens > 0) {
+      saveProjectState({
+        output_tokens_est:    outputTokens,
+        output_tokens_actual: outputTokens,
+        // Only override input estimate if transcript gives a higher value
+        // (post-tool-use hook adds compression savings on top; don't clobber)
+        ...(inputTokens > 0 ? { input_tokens_est: inputTokens } : {}),
+      });
+    }
+  } catch (_) { /* silent — never block a session */ }
+}
+
 let raw = '';
 process.stdin.on('data', c => { raw += c; });
 process.stdin.on('end', () => {
@@ -20,6 +65,10 @@ process.stdin.on('end', () => {
     const prompt = (data.prompt || '').trim();
     const lower  = prompt.toLowerCase();
     const config = loadConfig();
+
+    // Sync real output/input token counts from transcript before reading state
+    syncTranscriptTokens(data);
+
     const proj   = loadProjectState();
     const root   = pluginRoot();
     const out    = [];

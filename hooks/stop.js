@@ -2,9 +2,32 @@
 'use strict';
 // Pith — Stop hook
 // Runs when Claude finishes a response.
-// Updates token counter with actual usage if available, else estimates from response length.
+// Reads transcript JSONL for exact usage counts; falls back to response-length estimate.
 
+const fs = require('fs');
 const { loadProjectState, saveProjectState } = require('./config');
+
+// Sum output_tokens and input_tokens from all assistant entries in a transcript JSONL.
+function readTranscriptTokens(transcriptPath) {
+  let outputTokens = 0, inputTokens = 0;
+  try {
+    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const d = JSON.parse(line);
+        if (d.type === 'assistant' && d.message && d.message.usage) {
+          const u = d.message.usage;
+          outputTokens += u.output_tokens || 0;
+          inputTokens  += (u.input_tokens || 0)
+                        + (u.cache_read_input_tokens || 0)
+                        + (u.cache_creation_input_tokens || 0);
+        }
+      } catch (_) { /* skip malformed line */ }
+    }
+  } catch (_) { /* file unreadable — caller falls back */ }
+  return { outputTokens, inputTokens };
+}
 
 let raw = '';
 process.stdin.on('data', c => { raw += c; });
@@ -14,16 +37,28 @@ process.stdin.on('end', () => {
     const proj = loadProjectState();
     const updates = {};
 
-    // Real token counts if Claude Code exposes them in stop event
+    // ── Token counts: transcript > data.usage > response-length estimate ──
     let actualOut = 0;
-    if (data.usage) {
+    if (data.transcript_path) {
+      const { outputTokens, inputTokens } = readTranscriptTokens(data.transcript_path);
+      if (outputTokens > 0 || inputTokens > 0) {
+        actualOut = outputTokens;
+        updates.output_tokens_est    = outputTokens;
+        updates.input_tokens_est     = inputTokens;
+        updates.output_tokens_actual = outputTokens;
+        updates.input_tokens_actual  = inputTokens;
+      }
+    }
+
+    if (actualOut === 0 && data.usage) {
       updates.input_tokens_actual  = (proj.input_tokens_actual  || 0) + (data.usage.input_tokens  || 0);
       updates.output_tokens_actual = (proj.output_tokens_actual || 0) + (data.usage.output_tokens || 0);
       actualOut = data.usage.output_tokens || 0;
-      // Prefer actual over estimate
       updates.input_tokens_est = updates.input_tokens_actual;
-    } else if (data.response) {
-      // Estimate output tokens, add to input_tokens_est (output becomes input next turn)
+    }
+
+    if (actualOut === 0 && data.response) {
+      // Last-resort estimate from response text length
       actualOut = Math.ceil(String(data.response).length / 4);
       updates.output_tokens_est = (proj.output_tokens_est || 0) + actualOut;
       updates.input_tokens_est  = (proj.input_tokens_est  || 0) + actualOut;
