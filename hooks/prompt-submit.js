@@ -134,6 +134,9 @@ process.stdin.on('end', () => {
       } else if (arg === 'status') {
         out.push(runTool('health.py', [], root));
 
+      } else if (arg === 'update') {
+        out.push(buildUpdateInstructions(root));
+
       } else if (arg === 'recall') {
         // /pith recall — restore last session's mode, wiki, and budget
         const saved = { mode: proj.mode, wiki_mode: proj.wiki_mode, budget: proj.budget };
@@ -537,6 +540,34 @@ function runTool(script, args, root, extraArgs) {
   } catch (e) {
     return `[PITH: ${script} failed — ${(e.stderr || e.message || '').slice(0, 200)}]`;
   }
+}
+
+function buildUpdateInstructions(root) {
+  // Detect install source: if root contains a .git dir it's the live repo; otherwise ~/.local/share/pith
+  const installDir = fs.existsSync(path.join(root, '.git'))
+    ? root
+    : path.join(require('os').homedir(), '.local', 'share', 'pith');
+  const hasGit = fs.existsSync(path.join(installDir, '.git'));
+
+  if (!hasGit) {
+    return (
+      'PITH UPDATE\n\n' +
+      'No git repo found at install location. Re-install to get the latest version:\n\n' +
+      '  bash <(curl -s https://raw.githubusercontent.com/abhisekjha/pith/main/install.sh)\n\n' +
+      'This will pull the latest version and re-register all hooks.'
+    );
+  }
+
+  return (
+    'PITH UPDATE — run these commands to pull the latest version:\n\n' +
+    '```bash\n' +
+    `git -C "${installDir}" pull --ff-only\n` +
+    `bash "${installDir}/install.sh"\n` +
+    '```\n\n' +
+    `Install dir: ${installDir}\n` +
+    'This pulls the latest commit, re-copies hooks to ~/.claude/hooks/pith/, and re-registers commands.\n\n' +
+    'After update, restart Claude Code (or open a new session) for changes to take effect.'
+  );
 }
 
 function loadTourSkill(root) {
