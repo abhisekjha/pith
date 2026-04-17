@@ -67,16 +67,25 @@ process.stdin.on('end', () => {
     }
 
     // ── Output savings from active compression mode ───────────────────────
-    // When lean/ultra is active, Claude writes shorter responses.
-    // Savings = (what output would have been without mode) - actual output.
-    // Baseline estimate: actual / (1 - compression_rate)
-    // Rates are conservative estimates validated against OCD/SWEzze benchmarks.
+    // stop.js fires once per response. actualOut = cumulative session total from transcript.
+    // Must compute savings on DELTA only (new output this turn) to avoid compounding.
+    // deltaOut = cumulative now minus cumulative at last stop event.
+    const IN_COST_PER_M  = 3.0;
+    const OUT_COST_PER_M = 15.0;
+
     if (actualOut > 0) {
+      const prevOut  = proj.output_tokens_last_stop || 0;
+      const deltaOut = Math.max(0, actualOut - prevOut);
+      updates.output_tokens_last_stop = actualOut;
+
+      // Track turn count for per-response averages
+      updates.turn_count_session = (proj.turn_count_session || 0) + 1;
+
       const mode = proj.mode || 'off';
       const rate = mode === 'ultra' ? 0.42 : mode === 'lean' ? 0.25 : mode === 'precise' ? 0.12 : 0;
-      if (rate > 0) {
-        const baseline  = Math.ceil(actualOut / (1 - rate));
-        const outSaved  = baseline - actualOut;
+      if (rate > 0 && deltaOut > 0) {
+        const baseline = Math.ceil(deltaOut / (1 - rate));
+        const outSaved = baseline - deltaOut;
         updates.output_savings_session = (proj.output_savings_session || 0) + outSaved;
       }
     }
@@ -85,14 +94,11 @@ process.stdin.on('end', () => {
     const sessionSaved = proj.tokens_saved_session || 0;
     updates.tokens_saved_total = (proj.tokens_saved_total || 0) + sessionSaved;
 
-    // Lifetime cost saved — split by token type (input vs output rate)
-    const IN_COST_PER_M  = 3.0;   // Sonnet 4.6 input
-    const OUT_COST_PER_M = 15.0;  // Sonnet 4.6 output
-    const outSaved       = (proj.output_savings_session || 0) + (updates.output_savings_session
-                           ? (updates.output_savings_session - (proj.output_savings_session || 0)) : 0);
-    const toolSaved      = Math.max(0, sessionSaved - outSaved);
-    const sessionCostSaved = (toolSaved  / 1_000_000 * IN_COST_PER_M)
-                           + (outSaved   / 1_000_000 * OUT_COST_PER_M);
+    // Lifetime cost saved — split by token type
+    const outSavedSession = updates.output_savings_session || proj.output_savings_session || 0;
+    const toolSaved       = Math.max(0, sessionSaved - outSavedSession);
+    const sessionCostSaved = (toolSaved        / 1_000_000 * IN_COST_PER_M)
+                           + (outSavedSession   / 1_000_000 * OUT_COST_PER_M);
     updates.cost_saved_total = (proj.cost_saved_total || 0) + sessionCostSaved;
 
     saveProjectState(updates);

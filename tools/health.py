@@ -137,8 +137,9 @@ def main():
     mode      = s.get('mode', 'off')
     budget    = s.get('budget')
     total     = s.get('tokens_saved_total', 0)
-    toon_total= s.get('toon_savings_total', 0)
+    toon_total   = s.get('toon_savings_total', 0)
     total_cost_saved = s.get('cost_saved_total', 0.0)
+    turn_count   = s.get('turn_count_session', 0)
 
     fill    = inp / limit if limit else 0
     # Total without Pith = what we consumed + what Pith removed
@@ -169,11 +170,13 @@ def main():
     pct_str    = f'{pct_color}{pct_fill}%{RESET}' if pct_color else f'{pct_fill}%'
     model_str  = f'Sonnet 4.6  {DIM}(in ${IN_COST_PER_M}/1M · out ${OUT_COST_PER_M}/1M){RESET}'
 
-    # ── State-of-the-art metrics ──────────────────────────────────────────────
-    # Compression ratio: tokens_without / tokens_used  (e.g. 3.1:1)
-    comp_ratio  = round(without / inp, 1) if inp > 0 else None
-    # Cost ROI: cost_saved / actual_cost  (e.g. 4.2× — you get $4.20 back per $1 spent)
-    roi         = round(saved_cost_val / actual_cost, 1) if actual_cost > 0.00001 else None
+    # ── Key metrics ───────────────────────────────────────────────────────────
+    comp_ratio   = round(without / inp, 1) if inp > 0 else None
+    # ROI = cost_saved / actual_cost: for every $1 spent, saved $ROI
+    roi          = round(saved_cost_val / actual_cost, 1) if actual_cost > 0.00001 else None
+    # Per-response averages (turn_count from stop hook, each response = 1 turn)
+    avg_out      = round(out_tok / turn_count) if turn_count > 0 else None
+    avg_in_delta = round(inp / turn_count)     if turn_count > 0 else None
 
     print()
     print(f'  {PURPLE}{BOLD}◆ PITH{RESET}{DIM} · SESSION STATUS{RESET}')
@@ -196,30 +199,40 @@ def main():
               f'{DIM}({pct}% fewer tokens — {fmt(t_saved)} saved of {fmt(without)} baseline){RESET}')
         if roi:
             print(f'  {DIM}{"Cost ROI":<18}{RESET}{roi_str}  '
-                  f'{DIM}({fmt_cost(saved_cost_val)} saved per {fmt_cost(actual_cost)} spent){RESET}')
+                  f'{DIM}(per $1 spent → ${roi} saved  ·  {fmt_cost(saved_cost_val)} total){RESET}')
+    if turn_count > 0 and avg_out:
+        print(f'  {DIM}{"Per response":<18}{RESET}'
+              f'{DIM}avg output {fmt(avg_out)} tok  ·  {turn_count} turns this session{RESET}')
 
     # ── Savings breakdown ─────────────────────────────────────────────────────
     print()
     print(f'  {DIM}Savings this session  (without Pith: {fmt(without)} tokens){RESET}')
     print()
 
-    buckets = [
-        ('Skeletons',      skel_s,    'file reads → imports + signatures'),
-        ('Bash/build',     bash_s,    'build, install, test output'),
-        ('Grep/search',    grep_s,    'search results capped at 25'),
-        ('TOON (JSON)',    toon_s,    'JSON → compact key=value format'),
-        ('Web fetch',      web_s,     'HTML stripped to text'),
-        ('Offloaded',      offload_s, 'large results moved to file'),
-        ('Output mode',    out_s,     f'lean/ultra response compression  {DIM}(est){RESET}'),
+    # Output mode savings are estimated relative to actual output tokens, not tool savings.
+    # Share % for output mode uses out_tok as denominator (not t_saved) to avoid >100% display.
+    tool_buckets = [
+        ('Skeletons',   skel_s,    'file reads → imports + signatures'),
+        ('Bash/build',  bash_s,    'build, install, test output'),
+        ('Grep/search', grep_s,    'search results capped at 25'),
+        ('TOON (JSON)', toon_s,    'JSON → compact key=value format'),
+        ('Web fetch',   web_s,     'HTML stripped to text'),
+        ('Offloaded',   offload_s, 'large results moved to file'),
     ]
-    any_bucket = any(v > 0 for _, v, _ in buckets)
+    any_bucket = any(v > 0 for _, v, _ in tool_buckets) or out_s > 0
     if any_bucket:
-        for label, val, desc in buckets:
+        for label, val, desc in tool_buckets:
             if val <= 0:
                 continue
             share_pct = round(val / t_saved * 100) if t_saved else 0
             mini      = pct_bar(val, t_saved)
             print(f'  {DIM}{label:<16}{RESET}{mini} {fmt(val):>6}  {DIM}{share_pct}%  {desc}{RESET}')
+        if out_s > 0:
+            # Show output mode savings relative to actual output (makes sense contextually)
+            out_pct = round(out_s / out_tok * 100) if out_tok > 0 else 0
+            mini    = pct_bar(out_s, max(out_s, out_tok))
+            print(f'  {DIM}{"Output mode":<16}{RESET}{mini} {fmt(out_s):>6}  '
+                  f'{DIM}est {out_pct}% of output  lean/ultra response compression{RESET}')
         print()
 
     # Summary line
