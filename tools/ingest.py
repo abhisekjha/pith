@@ -14,10 +14,14 @@ import json
 import os
 import re
 import subprocess
-import urllib.request
-import urllib.error
+import urllib.error  # still referenced for urllib.error.URLError
 from datetime import datetime, timezone
 from pathlib import Path
+
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from _safe_paths import safe_wiki_path, UnsafePathError  # noqa: E402
+from _safe_fetch import safe_fetch, UnsafeFetchError  # noqa: E402
 
 CODE_EXTENSIONS = {
     'py', 'js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs',
@@ -325,7 +329,11 @@ Writing pages...""")
     rel_source = str(filepath.relative_to(cwd)) if filepath.is_relative_to(cwd) else str(filepath)
 
     for page_spec in analysis.get('create_pages', []):
-        page_path = cwd / page_spec['path']
+        try:
+            page_path = safe_wiki_path(cwd, page_spec.get('path'))
+        except UnsafePathError as exc:
+            print(f'  ⚠ skipped: {exc}')
+            continue
         page_path.parent.mkdir(parents=True, exist_ok=True)
         page_type = page_spec.get('type', 'concept')
         if page_type == 'module':
@@ -409,17 +417,20 @@ def _html_to_text(html: str) -> str:
 
 
 def fetch_url(url: str) -> Path:
-    """Fetch URL, save as markdown in raw/sources/, return path."""
+    """Fetch URL, save as markdown in raw/sources/, return path.
+
+    Uses `safe_fetch` to enforce http(s)-only + public-IP + size cap, which
+    closes the SSRF path (`file://`, loopback, cloud-metadata IPs, …).
+    """
     cwd = Path.cwd()
     sources_dir = cwd / 'raw' / 'sources'
     sources_dir.mkdir(parents=True, exist_ok=True)
 
     print(f'Fetching {url} ...')
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (compatible; pith-ingest/1.0)'})
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read()
-            content_type = resp.headers.get('Content-Type', '')
+        raw, content_type = safe_fetch(url)
+    except UnsafeFetchError as e:
+        raise RuntimeError(f'Refused to fetch {url}: {e}')
     except urllib.error.URLError as e:
         raise RuntimeError(f'Fetch failed: {e}')
 

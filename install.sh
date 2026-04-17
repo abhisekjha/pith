@@ -99,6 +99,12 @@ const cmds = process.argv[2];
 const hooks = process.argv[3];
 const root  = process.argv[4];
 
+// NOTE: $ARGUMENTS is Claude Code's literal template substitution — it is NOT
+// shell-escaped. The only injection-safe way to forward user args into bash is
+// to place them inside a single-quoted heredoc whose delimiter cannot appear
+// in normal user input. The helper then reads stdin instead of argv.
+const HEREDOC_TAG = 'PITH_EOF_7f3a9c2e';
+
 const pithMd = `---
 allowed-tools: Bash
 ---
@@ -106,9 +112,12 @@ Run the Pith hook for this subcommand and apply the result.
 
 **Subcommand:** $ARGUMENTS
 
-Step 1 — execute the hook:
+Step 1 — execute the hook. Arguments flow via a single-quoted heredoc so
+shell metacharacters in user input are never evaluated:
 \`\`\`bash
-echo '{"prompt":"/pith $ARGUMENTS"}' | node "${hooks}/prompt-submit.js"
+node "${hooks}/prompt-submit.js" --slash /pith <<'${HEREDOC_TAG}'
+$ARGUMENTS
+${HEREDOC_TAG}
 \`\`\`
 
 Step 2 — act on the output:
@@ -127,9 +136,11 @@ Run the Pith budget hook and apply the token ceiling.
 
 **Argument:** $ARGUMENTS
 
-Step 1 — execute the hook:
+Step 1 — execute the hook (arguments passed via heredoc, never via shell args):
 \`\`\`bash
-echo '{"prompt":"/budget $ARGUMENTS"}' | node "${hooks}/prompt-submit.js"
+node "${hooks}/prompt-submit.js" --slash /budget <<'${HEREDOC_TAG}'
+$ARGUMENTS
+${HEREDOC_TAG}
 \`\`\`
 
 Step 2 — apply the result:
@@ -146,8 +157,12 @@ Load only the sections of a file relevant to the current question.
 
 **File:** $ARGUMENTS
 
+The file path is delivered to focus.py via a heredoc, so metacharacters in
+the path cannot trigger shell evaluation:
 \`\`\`bash
-python3 "${root}/tools/focus.py" "$ARGUMENTS"
+python3 "${root}/tools/focus.py" --stdin-path <<'${HEREDOC_TAG}'
+$ARGUMENTS
+${HEREDOC_TAG}
 \`\`\`
 
 Show the relevant sections to the user. If no sections match, show the file structure overview.

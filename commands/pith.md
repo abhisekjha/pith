@@ -6,9 +6,14 @@ Run the Pith hook for this subcommand and apply the result.
 
 **Subcommand:** $ARGUMENTS
 
-Step 1 — execute the hook:
+Step 1 — execute the hook. The arguments are passed via a single-quoted
+heredoc so any shell metacharacters the user typed ('"$`;|&) are forwarded
+as literal bytes and cannot be evaluated by the shell:
+
 ```bash
-echo '{"prompt":"/pith $ARGUMENTS"}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/prompt-submit.js"
+node "${CLAUDE_PLUGIN_ROOT}/hooks/prompt-submit.js" --slash /pith <<'PITH_EOF_7f3a9c2e'
+$ARGUMENTS
+PITH_EOF_7f3a9c2e
 ```
 
 Step 2 — act on the output:

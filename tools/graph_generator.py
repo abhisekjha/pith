@@ -292,9 +292,18 @@ svg { position: relative; z-index: 1; width:100vw; height:100vh; display:block; 
 <div id="tooltip"></div>
 <svg id="graph"></svg>
 
+<!-- Wiki data is injected into an application/json block so that crafted
+     titles / labels (possibly authored via `/pith ingest --url`) cannot
+     break out of a script tag. Any `<`, `>`, `&` inside the JSON are
+     emitted as unicode escapes by _json_for_html, so a literal `</script>`
+     can never appear here. -->
+<script id="pith-graph-data" type="application/json">__GRAPH_DATA__</script>
+
 <script>
-const RAW_NODES = __NODES__;
-const RAW_EDGES = __EDGES__;
+// ── Injected data ─────────────────────────────────────────────────────────────
+const __GRAPH = JSON.parse(document.getElementById("pith-graph-data").textContent);
+const RAW_NODES = __GRAPH.nodes;
+const RAW_EDGES = __GRAPH.edges;
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const GROUP_COLORS = {
@@ -545,11 +554,24 @@ window.addEventListener("resize", () =>
 """
 
 
+def _json_for_html(obj) -> str:
+    """Serialise `obj` such that the result is safe to embed between
+    `<script type="application/json">` tags.
+
+    `json.dumps` does not escape `<`, `>` or `&`, so a wiki title containing
+    `</script>` would otherwise break out of the block (XSS). Converting
+    those three characters to their \\uXXXX forms makes the payload opaque
+    to an HTML parser while remaining valid JSON for `JSON.parse`.
+    """
+    return (json.dumps(obj, ensure_ascii=False)
+                .replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026"))
+
+
 def generate_html(nodes: list[dict], edges: list[dict]) -> str:
-    html = HTML_TEMPLATE
-    html = html.replace("__NODES__", json.dumps(nodes, indent=2))
-    html = html.replace("__EDGES__", json.dumps(edges, indent=2))
-    return html
+    payload = _json_for_html({"nodes": nodes, "edges": edges})
+    return HTML_TEMPLATE.replace("__GRAPH_DATA__", payload)
 
 
 # ── 3. Main ───────────────────────────────────────────────────────────────────

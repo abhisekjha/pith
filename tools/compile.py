@@ -16,6 +16,10 @@ import json
 import os
 import re
 import subprocess
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).parent))
+from _safe_paths import safe_wiki_path, UnsafePathError  # noqa: E402
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -253,7 +257,11 @@ def compile_wiki(topic_filter: str | None = None, dry_run: bool = False):
 
     # Write synthesis pages
     for spec in synthesis_pages:
-        page_path = cwd / spec['path']
+        try:
+            page_path = safe_wiki_path(cwd, spec.get('path'))
+        except UnsafePathError as exc:
+            print(f'  ⚠ skipped: {exc}')
+            continue
         page_path.parent.mkdir(parents=True, exist_ok=True)
 
         relevant_sources = [s for s in sources if s['filename'] in spec.get('sources', [])]
@@ -287,7 +295,11 @@ def compile_wiki(topic_filter: str | None = None, dry_run: bool = False):
         existing_path = topic.get('existing_page')
         if not existing_path:
             continue
-        page_path = cwd / existing_path
+        try:
+            page_path = safe_wiki_path(cwd, existing_path)
+        except UnsafePathError as exc:
+            print(f'  ⚠ skipped: {exc}')
+            continue
         if not page_path.exists():
             continue
         relevant_sources = [s for s in sources if s['filename'] in topic.get('sources', [])]
