@@ -18,12 +18,45 @@ Usage:
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import os
 import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _atomic_write(path: Path, content: str) -> None:
+    tmp = path.with_suffix(f'.{os.getpid()}.tmp')
+    tmp.write_text(content, encoding='utf-8')
+    tmp.replace(path)
+
+
+_LINT_CACHE_FILE = '.lint-cache.json'
+
+def _wiki_fingerprint(pages: list[dict]) -> str:
+    h = hashlib.sha256()
+    for p in sorted(pages, key=lambda x: x['path']):
+        h.update(p['path'].encode())
+        try:
+            mtime = str(Path(p['path']).stat().st_mtime)
+        except Exception:
+            mtime = '0'
+        h.update(mtime.encode())
+    return h.hexdigest()
+
+def _load_lint_cache(cwd: Path) -> dict:
+    p = cwd / 'wiki' / _LINT_CACHE_FILE
+    try:
+        return json.loads(p.read_text()) if p.exists() else {}
+    except Exception:
+        return {}
+
+def _save_lint_cache(cwd: Path, fingerprint: str, result: dict) -> None:
+    p = cwd / 'wiki' / _LINT_CACHE_FILE
+    _atomic_write(p, json.dumps({'fingerprint': fingerprint, 'result': result}))
 
 LINT_PROMPT = """You are auditing a project knowledge wiki for quality issues.
 
@@ -194,10 +227,8 @@ def append_lint_log(cwd: Path, issue_count: int):
     log_path = cwd / 'wiki' / 'log.md'
     now = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     entry = f'\n## [{now}] lint\nIssues found: {issue_count}\n'
-    if log_path.exists():
-        log_path.write_text(log_path.read_text() + entry)
-    else:
-        log_path.write_text('# Wiki Log\n' + entry)
+    existing = log_path.read_text() if log_path.exists() else '# Wiki Log\n'
+    _atomic_write(log_path, existing + entry)
 
 
 def create_stub(cwd: Path, spec: dict):
@@ -239,24 +270,34 @@ def lint(fix: bool = False, quick: bool = False):
             print('  No issues found.')
         return
 
+    # Check fingerprint cache before firing LLM
+    fingerprint  = _wiki_fingerprint(pages)
+    lint_cache   = _load_lint_cache(cwd)
+    cached_result: dict | None = None
+    if lint_cache.get('fingerprint') == fingerprint and not fix:
+        cached_result = lint_cache.get('result', {})
+        print('  (wiki unchanged since last lint — using cached semantic results)')
+
     # LLM semantic checks
-    print('Running semantic analysis...')
-    page_summaries = '\n\n'.join(
-        f'**{p["path"]}** (links: {", ".join(p["links"][:5]) or "none"})\n{p["text"][:400]}'
-        for p in pages[:20]  # cap at 20 pages to stay within token budget
-    )
-
-    raw = call_claude(LINT_PROMPT.format(
-        page_summaries=page_summaries[:8000],
-        wiki_index=wiki_index[:2000],
-        log_tail=log_tail[:1000],
-    ))
-
-    try:
-        m = re.search(r'\{[\s\S]*\}', raw)
-        result = json.loads(m.group()) if m else {}
-    except Exception:
-        result = {}
+    if cached_result is not None:
+        result = cached_result
+    else:
+        print('Running semantic analysis...')
+        page_summaries = '\n\n'.join(
+            f'**{p["path"]}** (links: {", ".join(p["links"][:5]) or "none"})\n{p["text"][:400]}'
+            for p in pages[:20]
+        )
+        raw = call_claude(LINT_PROMPT.format(
+            page_summaries=page_summaries[:8000],
+            wiki_index=wiki_index[:2000],
+            log_tail=log_tail[:1000],
+        ))
+        try:
+            m = re.search(r'\{[\s\S]*\}', raw)
+            result = json.loads(m.group()) if m else {}
+        except Exception:
+            result = {}
+        _save_lint_cache(cwd, fingerprint, result)
 
     issue_num = 0
 

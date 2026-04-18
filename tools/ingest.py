@@ -23,6 +23,37 @@ _sys.path.insert(0, str(Path(__file__).parent))
 from _safe_paths import safe_wiki_path, UnsafePathError  # noqa: E402
 from _safe_fetch import safe_fetch, UnsafeFetchError  # noqa: E402
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _atomic_write(path: Path, content: str) -> None:
+    tmp = path.with_suffix(f'.{os.getpid()}.tmp')
+    tmp.write_text(content, encoding='utf-8')
+    tmp.replace(path)
+
+
+_INGEST_MANIFEST = 'wiki/.ingest-manifest.json'
+
+def _load_ingest_manifest(cwd: Path) -> dict:
+    p = cwd / _INGEST_MANIFEST
+    try:
+        return json.loads(p.read_text()) if p.exists() else {}
+    except Exception:
+        return {}
+
+def _save_ingest_manifest(cwd: Path, manifest: dict) -> None:
+    p = cwd / _INGEST_MANIFEST
+    p.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(p, json.dumps(manifest, indent=2))
+
+def _source_fp(path: Path) -> str:
+    s = path.stat()
+    return f'{s.st_mtime}:{s.st_size}'
+
+def _already_ingested(cwd: Path, filepath: Path) -> bool:
+    manifest = _load_ingest_manifest(cwd)
+    key = str(filepath.resolve())
+    return manifest.get(key) == _source_fp(filepath)
+
 CODE_EXTENSIONS = {
     'py', 'js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs',
     'go', 'java', 'kt', 'rs', 'cs', 'cpp', 'c', 'h',
@@ -241,7 +272,7 @@ def update_index(cwd: Path, new_pages: list[dict], source_title: str, source_pat
     else:
         content += f'\n## Sources Processed\n{source_entry}'
 
-    idx_path.write_text(content)
+    _atomic_write(idx_path, content)
 
 
 def append_log(cwd: Path, source_title: str, analysis: dict):
@@ -257,17 +288,20 @@ Pages updated: {updated or 'none'}
 New pages: {new_pages or 'none'}
 Contradictions: {'yes — ' + '; '.join(contradictions) if contradictions else 'none'}
 """
-    if log_path.exists():
-        log_path.write_text(log_path.read_text() + entry)
-    else:
-        log_path.write_text('# Wiki Log\n' + entry)
+    existing = log_path.read_text() if log_path.exists() else '# Wiki Log\n'
+    _atomic_write(log_path, existing + entry)
 
 
-def ingest(filepath: Path):
+def ingest(filepath: Path, force: bool = False):
     cwd = Path.cwd()
 
     if not filepath.exists():
         print(f'[PITH INGEST ERROR: file not found: {filepath}]')
+        return
+
+    if not force and _already_ingested(cwd, filepath):
+        print(f'[PITH INGEST: {filepath.name} already ingested and unchanged — skipping]')
+        print(f'  Use --force to re-ingest.')
         return
 
     source_content = filepath.read_text(errors='ignore')
@@ -378,12 +412,15 @@ Writing pages...""")
             key_claims='\n'.join(f'- {c}' for c in analysis.get('key_claims', [])),
             page_format=fmt_filled,
         ))
-        page_path.write_text(content)
+        _atomic_write(page_path, content)
         print(f'  ✓ {page_spec["path"]}')
 
-    # Step 3: Update index and log
+    # Step 3: Update index, log, and manifest
     update_index(cwd, analysis.get('create_pages', []), source_title, rel_source)
     append_log(cwd, source_title, analysis)
+    manifest = _load_ingest_manifest(cwd)
+    manifest[str(filepath.resolve())] = _source_fp(filepath)
+    _save_ingest_manifest(cwd, manifest)
 
     print(f'\nIngest complete. {len(analysis.get("create_pages", []))} pages created.')
 
@@ -464,13 +501,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('filepath', nargs='?', help='Local file to ingest')
     p.add_argument('--url', help='URL to fetch and ingest')
+    p.add_argument('--force', action='store_true', help='Re-ingest even if unchanged')
     args = p.parse_args()
 
     if args.url:
         path = fetch_url(args.url)
-        ingest(path)
+        ingest(path, force=args.force)
     elif args.filepath:
-        ingest(Path(args.filepath).resolve())
+        ingest(Path(args.filepath).resolve(), force=args.force)
     else:
         p.error('Provide a filepath or --url')
 

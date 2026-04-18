@@ -17,9 +17,34 @@ Upgrade: install tree-sitter-languages for exact AST-based extraction.
 """
 from __future__ import annotations
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
+
+# ── Mtime cache ───────────────────────────────────────────────────────────────
+
+_SYM_CACHE_FILE = Path('/tmp/pith-symbols-cache.json')
+_SYM_CACHE_MAX  = 500
+
+def _load_sym_cache() -> dict:
+    try:
+        return json.loads(_SYM_CACHE_FILE.read_text()) if _SYM_CACHE_FILE.exists() else {}
+    except Exception:
+        return {}
+
+def _save_sym_cache(cache: dict) -> None:
+    try:
+        if len(cache) > _SYM_CACHE_MAX:
+            cache = dict(list(cache.items())[-_SYM_CACHE_MAX:])
+        tmp = _SYM_CACHE_FILE.with_suffix('.tmp')
+        tmp.write_text(json.dumps(cache))
+        tmp.replace(_SYM_CACHE_FILE)
+    except Exception:
+        pass
+
+def _sym_key(path: Path, symbol: str) -> str:
+    return f'{path.resolve()}:{path.stat().st_mtime}:{symbol}'
 
 
 # ── Tree-sitter (preferred if installed) ─────────────────────────────────────
@@ -233,9 +258,16 @@ def find_symbol(file_path: str, symbol_name: str) -> str:
     if not path.exists():
         return f'[PITH: file not found: {file_path}]'
 
+    cache = _load_sym_cache()
+    key   = _sym_key(path, symbol_name)
+    if key in cache:
+        return cache[key]
+
     # Try tree-sitter first
     ts_result = _try_treesitter(path, symbol_name)
     if ts_result is not None:
+        cache[key] = ts_result
+        _save_sym_cache(cache)
         return ts_result
 
     # Regex fallback
@@ -272,13 +304,16 @@ def find_symbol(file_path: str, symbol_name: str) -> str:
             + '\n'.join(callees)
         )
 
-    return (
+    result = (
         f'[PITH SYMBOL: {symbol_name} in {path.name} '
         f'(lines {start+1}–{end_line}, regex)]\n\n'
         + numbered
         + speculative
         + f'\n\n[Full file: {len(lines)} lines — /pith symbol --list {file_path} to see all]'
     )
+    cache[key] = result
+    _save_sym_cache(cache)
+    return result
 
 
 def list_symbols(file_path: str) -> str:
@@ -286,6 +321,11 @@ def list_symbols(file_path: str) -> str:
     path = Path(file_path)
     if not path.exists():
         return f'[PITH: file not found: {file_path}]'
+
+    cache = _load_sym_cache()
+    key   = _sym_key(path, '__list__')
+    if key in cache:
+        return cache[key]
 
     content = path.read_text(errors='ignore')
     lines   = content.split('\n')
@@ -316,14 +356,20 @@ def list_symbols(file_path: str) -> str:
                 found.append((i + 1, 'func', m.group(1)))
 
     if not found:
-        return f'[PITH: no symbols found in {path.name} — unsupported language or empty file]'
+        result = f'[PITH: no symbols found in {path.name} — unsupported language or empty file]'
+        cache[key] = result
+        _save_sym_cache(cache)
+        return result
 
-    rows = '\n'.join(f'  {kind:6} {name:<40} line {ln}' for ln, kind, name in found)
-    return (
+    rows   = '\n'.join(f'  {kind:6} {name:<40} line {ln}' for ln, kind, name in found)
+    result = (
         f'[PITH SYMBOLS: {path.name} — {len(found)} symbols]\n\n'
         + rows +
         f'\n\nUse: /pith symbol {file_path} <name>  to extract any symbol'
     )
+    cache[key] = result
+    _save_sym_cache(cache)
+    return result
 
 
 def main():

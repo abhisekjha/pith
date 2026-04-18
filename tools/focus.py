@@ -8,9 +8,34 @@ Usage:
 """
 from __future__ import annotations
 import argparse
+import hashlib
+import json
 import re
 import sys
 from pathlib import Path
+
+_FOCUS_CACHE_FILE = Path('/tmp/pith-focus-cache.json')
+_FOCUS_CACHE_MAX  = 200
+
+def _load_focus_cache() -> dict:
+    try:
+        return json.loads(_FOCUS_CACHE_FILE.read_text()) if _FOCUS_CACHE_FILE.exists() else {}
+    except Exception:
+        return {}
+
+def _save_focus_cache(cache: dict) -> None:
+    try:
+        if len(cache) > _FOCUS_CACHE_MAX:
+            cache = dict(list(cache.items())[-_FOCUS_CACHE_MAX:])
+        tmp = _FOCUS_CACHE_FILE.with_suffix('.tmp')
+        tmp.write_text(json.dumps(cache))
+        tmp.replace(_FOCUS_CACHE_FILE)
+    except Exception:
+        pass
+
+def _focus_key(filepath: Path, question: str, top_k: int) -> str:
+    q_hash = hashlib.md5(question.encode()).hexdigest()[:8]
+    return f'{filepath.resolve()}:{filepath.stat().st_mtime}:{q_hash}:{top_k}'
 
 STOP_WORDS = {
     'the','a','an','is','are','was','were','be','been','being','have','has','had',
@@ -86,29 +111,41 @@ def focus(filepath: Path, question: str, top_k: int = 5) -> str:
     if not filepath.exists():
         return f"[PITH FOCUS ERROR: file not found: {filepath}]"
 
+    cache = _load_focus_cache()
+    key   = _focus_key(filepath, question, top_k)
+    if key in cache:
+        return cache[key]
+
     content = filepath.read_text(errors='ignore')
     lines   = content.split('\n')
 
+    def _cache_and_return(result: str) -> str:
+        cache[key] = result
+        _save_focus_cache(cache)
+        return result
+
     if len(lines) <= 60:
-        return f"[PITH FOCUS: {filepath.name} — {len(lines)} lines, returned in full]\n\n{content}"
+        return _cache_and_return(
+            f"[PITH FOCUS: {filepath.name} — {len(lines)} lines, returned in full]\n\n{content}"
+        )
 
     kws = keywords(question) if question.strip() else set()
     if not kws:
-        return structure_overview(content, lines, filepath)
+        return _cache_and_return(structure_overview(content, lines, filepath))
 
     chunks  = split_chunks(content)
     scored  = [(score(chunk, kws), ln, chunk) for ln, chunk in chunks]
     top     = sorted(scored, key=lambda x: -x[0])[:top_k]
 
     if all(s == 0.0 for s, _, _ in top):
-        return structure_overview(content, lines, filepath)
+        return _cache_and_return(structure_overview(content, lines, filepath))
 
     top_ordered = sorted(top, key=lambda x: x[1])
     parts = [f"[PITH FOCUS: {filepath.name} — {len(lines)} lines → {top_k} relevant sections for: \"{question[:80]}\"]\n"]
     for s, ln, chunk in top_ordered:
         parts.append(f"[~Line {ln}]\n{chunk}")
     parts.append(f"\n[{len(chunks) - top_k} other sections omitted. Ask for full file or specific section.]")
-    return '\n\n'.join(parts)
+    return _cache_and_return('\n\n'.join(parts))
 
 
 def main():

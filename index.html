@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pith — token optimization for Claude Code</title>
-  <meta name="description" content="40–60% token reduction. Project wiki. Knowledge graph. Zero config." />
+  <meta name="description" content="40–60% token reduction. Project wiki. Knowledge graph. Caching layer. Zero config." />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1575,6 +1575,26 @@
       <h3>Self-updating</h3>
       <p>Already installed? <code style="font-family:var(--mono);font-size:11px">/pith update</code> pulls the latest version and re-syncs all hooks, slash commands, and settings in one step. No manual reinstall or curl-pipe needed for existing users.</p>
     </div>
+    <div class="feat">
+      <div class="feat-n">22</div>
+      <h3>Mtime caching — symbol &amp; focus <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">v1.3 · 2026</span></h3>
+      <p>Every <code style="font-family:var(--mono);font-size:11px">/pith symbol</code> and <code style="font-family:var(--mono);font-size:11px">/pith focus</code> result is cached keyed by <code style="font-family:var(--mono);font-size:11px">path:mtime:symbol</code> in <code style="font-family:var(--mono);font-size:11px">/tmp/pith-symbols-cache.json</code>. Repeated lookups on the same file within a session return instantly — no re-read, no re-parse. Cache is invalidated the moment the file changes. Cap of 500 entries; oldest pruned automatically.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">23</div>
+      <h3>Source manifest + parallel compile <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">v1.3 · 2026</span></h3>
+      <p><code style="font-family:var(--mono);font-size:11px">/pith compile</code> fingerprints every source file (<code style="font-family:var(--mono);font-size:11px">mtime:size</code>) and stores the manifest in <code style="font-family:var(--mono);font-size:11px">wiki/.compile-manifest.json</code>. On the next run, only changed sources are reprocessed — unchanged sources are skipped instantly. Page writes run in parallel via <code style="font-family:var(--mono);font-size:11px">ThreadPoolExecutor(4)</code>, cutting wall-clock time 3–5×. An exclusive lock file prevents concurrent runs from racing. Prompt caching via <code style="font-family:var(--mono);font-size:11px">cache_control: ephemeral</code> amortizes the static instruction block across all N page-write API calls in a compile run.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">24</div>
+      <h3>Ingest deduplication <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">v1.3 · 2026</span></h3>
+      <p>Before running a Claude analysis, <code style="font-family:var(--mono);font-size:11px">/pith ingest</code> checks <code style="font-family:var(--mono);font-size:11px">wiki/.ingest-manifest.json</code> for a fingerprint of the source file. If the file hasn't changed since it was last ingested, the command exits immediately — no duplicate wiki pages, no wasted API call. Pass <code style="font-family:var(--mono);font-size:11px">--force</code> to override. The manifest is updated atomically after every successful ingest.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-n">25</div>
+      <h3>Atomic writes + lint fingerprint cache <span style="font-size:10px;font-weight:400;opacity:0.5;margin-left:4px">v1.3 · 2026</span></h3>
+      <p>Every wiki file write — pages, index, log — now goes through a <code style="font-family:var(--mono);font-size:11px">path.{pid}.tmp → rename()</code> pattern, which is atomic on POSIX. A crash mid-write leaves a stale <code style="font-family:var(--mono);font-size:11px">.tmp</code> file instead of a corrupted wiki page. <code style="font-family:var(--mono);font-size:11px">/pith lint</code> fingerprints all wiki pages via SHA-256 of combined mtimes; if the wiki is unchanged since the last run, the LLM semantic analysis is skipped entirely and the cached result is returned instantly.</p>
+    </div>
   </div>
 </div>
 
@@ -1806,7 +1826,7 @@
 
 <!-- ━━━━━━━━━━━━━━━━━━━━ FOOTER ━━━━━━━━━━━━━━━━━━━━ -->
 <footer>
-  <span>Pith — token optimization for Claude Code</span>
+  <span>Pith v1.3.0 — token optimization for Claude Code</span>
   <div class="fl">
     <a href="https://github.com/abhisekjha/pith" target="_blank">GitHub</a>
     <a href="https://github.com/abhisekjha/pith/blob/main/README.md" target="_blank">Docs</a>

@@ -12,11 +12,14 @@ Usage:
 """
 from __future__ import annotations
 import argparse
+import fcntl
 import json
 import os
 import re
 import subprocess
 import sys as _sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).parent))
 from _safe_paths import safe_wiki_path, UnsafePathError  # noqa: E402
@@ -65,6 +68,17 @@ OUTPUT THIS JSON (no other text):
   ]
 }}"""
 
+COMPILE_PAGE_INSTRUCTIONS = """Write or update a wiki page synthesizing evidence from multiple sources.
+
+Rules:
+- Lead with the thesis
+- Cite every claim: [source-name](../../raw/sources/file.md)
+- Cross-link related pages with [[PageName]]
+- Add Counter-evidence section if sources disagree
+- Keep it tight — no prose where structure works
+
+Return only the markdown content."""
+
 COMPILE_PAGE_PROMPT = """Write or update a wiki page synthesizing evidence from multiple sources.
 
 Page: {page_path}
@@ -107,6 +121,50 @@ SYNTHESIS_FORMAT = """# {title}
 """
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _atomic_write(path: Path, content: str) -> None:
+    tmp = path.with_suffix(f'.{os.getpid()}.tmp')
+    tmp.write_text(content, encoding='utf-8')
+    tmp.replace(path)
+
+
+@contextmanager
+def _compile_lock(cwd: Path):
+    lock_path = cwd / 'wiki' / '.compile.lock'
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, 'w') as lf:
+        try:
+            fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print('[PITH COMPILE: another compile is already running — aborting]')
+            raise SystemExit(1)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+            lock_path.unlink(missing_ok=True)
+
+
+_MANIFEST_FILE = '.compile-manifest.json'
+
+def _load_manifest(cwd: Path) -> dict:
+    p = cwd / 'wiki' / _MANIFEST_FILE
+    try:
+        return json.loads(p.read_text()) if p.exists() else {}
+    except Exception:
+        return {}
+
+def _save_manifest(cwd: Path, manifest: dict) -> None:
+    p = cwd / 'wiki' / _MANIFEST_FILE
+    p.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(p, json.dumps(manifest, indent=2))
+
+def _source_fingerprint(path: Path) -> str:
+    s = path.stat()
+    return f'{s.st_mtime}:{s.st_size}'
+
+
 def call_claude(prompt: str) -> str:
     if key := os.environ.get('ANTHROPIC_API_KEY'):
         try:
@@ -126,6 +184,33 @@ def call_claude(prompt: str) -> str:
         return r.stdout.strip()
     except Exception as e:
         raise RuntimeError(f'Claude call failed: {e}')
+
+
+def call_claude_page(dynamic_spec: str) -> str:
+    """Call Claude for page synthesis with prompt caching on the static instructions."""
+    if key := os.environ.get('ANTHROPIC_API_KEY'):
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=key)
+            msg = client.messages.create(
+                model=os.environ.get('PITH_MODEL', 'claude-sonnet-4-6'),
+                max_tokens=4096,
+                messages=[{
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'text',
+                            'text': COMPILE_PAGE_INSTRUCTIONS,
+                            'cache_control': {'type': 'ephemeral'},
+                        },
+                        {'type': 'text', 'text': dynamic_spec},
+                    ],
+                }],
+            )
+            return msg.content[0].text.strip()
+        except ImportError:
+            pass
+    return call_claude(COMPILE_PAGE_INSTRUCTIONS + '\n\n' + dynamic_spec)
 
 
 def read_wiki_index(cwd: Path) -> str:
@@ -181,7 +266,7 @@ def update_index(cwd: Path, new_pages: list[dict]):
             content = content.replace('## Syntheses\n', '## Syntheses\n' + entry)
         else:
             content += f'\n## Syntheses\n{entry}'
-    idx_path.write_text(content)
+    _atomic_write(idx_path, content)
 
 
 def append_log(cwd: Path, created: list[str], updated: list[str], gaps: list[dict]):
@@ -195,10 +280,28 @@ Updated: {', '.join(f'[[{p}]]' for p in updated) or 'none'}
 Gaps identified:
 {gap_lines}
 """
-    if log_path.exists():
-        log_path.write_text(log_path.read_text() + entry)
-    else:
-        log_path.write_text('# Wiki Log\n' + entry)
+    existing = log_path.read_text() if log_path.exists() else '# Wiki Log\n'
+    _atomic_write(log_path, existing + entry)
+
+
+def _write_page(spec: dict, sources: list[dict], cwd: Path) -> tuple[str, str]:
+    """Write one synthesis page. Returns ('created'|'updated', title). Thread-safe."""
+    try:
+        page_path = safe_wiki_path(cwd, spec.get('path'))
+    except UnsafePathError as exc:
+        raise ValueError(f'skipped: {exc}')
+    page_path.parent.mkdir(parents=True, exist_ok=True)
+    relevant = [s for s in sources if s['filename'] in spec.get('sources', [])] or sources[:3]
+    excerpts = get_source_excerpts(relevant, spec.get('title', ''))
+    existing = page_path.read_text(errors='ignore') if page_path.exists() else ''
+    dynamic  = (
+        f"Page: {spec['path']}\nTitle: {spec['title']}\nThesis: {spec.get('thesis', '')}\n\n"
+        f"SOURCES (relevant excerpts):\n{excerpts}\n\n"
+        f"EXISTING PAGE CONTENT (if any):\n{existing[:2000] if existing else '(new page)'}"
+    )
+    content = call_claude_page(dynamic)
+    _atomic_write(page_path, content)
+    return ('updated' if existing else 'created', spec['title'])
 
 
 def compile_wiki(topic_filter: str | None = None, dry_run: bool = False):
@@ -211,119 +314,122 @@ def compile_wiki(topic_filter: str | None = None, dry_run: bool = False):
         print('Run /pith ingest <file> or /pith ingest --url <url> to add sources first.')
         return
 
-    print(f'Found {len(sources)} source(s). Building compile plan...')
+    with _compile_lock(cwd):
+        manifest = _load_manifest(cwd)
+        new_manifest: dict = {}
 
-    source_summaries = '\n\n'.join(
-        f'**{s["filename"]}**\n{s["excerpt"][:400]}' for s in sources
-    )
-    wiki_index = read_wiki_index(cwd)
+        # Fingerprint each source; track which changed
+        changed_sources, unchanged = [], []
+        for s in sources:
+            fp = _source_fingerprint(s['path'])
+            new_manifest[s['filename']] = fp
+            if manifest.get(s['filename']) != fp:
+                changed_sources.append(s)
+            else:
+                unchanged.append(s['filename'])
 
-    plan_raw = call_claude(COMPILE_PLAN_PROMPT.format(
-        source_summaries=source_summaries[:6000],
-        wiki_index=wiki_index[:2000],
-    ))
+        if unchanged and not topic_filter:
+            print(f'  {len(unchanged)} source(s) unchanged, skipping: {", ".join(unchanged[:5])}{"…" if len(unchanged) > 5 else ""}')
 
-    try:
-        m = re.search(r'\{[\s\S]*\}', plan_raw)
-        plan = json.loads(m.group()) if m else {}
-    except Exception:
-        plan = {}
+        if not changed_sources and not topic_filter:
+            print('[PITH COMPILE: all sources up to date — nothing to recompile]')
+            return
 
-    if not plan:
-        print('[PITH COMPILE: plan generation failed]\n' + plan_raw)
-        return
+        active_sources = changed_sources if changed_sources else sources
+        print(f'Found {len(active_sources)} changed source(s). Building compile plan...')
 
-    topics = [t for t in plan.get('topics', []) if t.get('action') != 'skip']
-    synthesis_pages = plan.get('synthesis_pages', [])
-    gaps = plan.get('gaps', [])
+        source_summaries = '\n\n'.join(
+            f'**{s["filename"]}**\n{s["excerpt"][:400]}' for s in active_sources
+        )
+        wiki_index = read_wiki_index(cwd)
 
-    print(f'\nCompile plan:')
-    print(f'  Topics to process: {len(topics)}')
-    print(f'  Synthesis pages:   {len(synthesis_pages)}')
-    print(f'  Gaps identified:   {len(gaps)}')
-
-    if gaps:
-        print('\nGaps (missing knowledge):')
-        for g in gaps:
-            print(f'  - {g["description"]}')
-            print(f'    → suggested: {g.get("suggested_page", "??")}')
-
-    if dry_run:
-        print('\n[dry-run] No files written.')
-        return
-
-    created, updated = [], []
-    now = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-
-    # Write synthesis pages
-    for spec in synthesis_pages:
-        try:
-            page_path = safe_wiki_path(cwd, spec.get('path'))
-        except UnsafePathError as exc:
-            print(f'  ⚠ skipped: {exc}')
-            continue
-        page_path.parent.mkdir(parents=True, exist_ok=True)
-
-        relevant_sources = [s for s in sources if s['filename'] in spec.get('sources', [])]
-        if not relevant_sources:
-            relevant_sources = sources[:3]
-
-        excerpts = get_source_excerpts(relevant_sources, spec.get('title', ''))
-        existing = page_path.read_text(errors='ignore') if page_path.exists() else ''
-        action = 'Updating' if existing else 'Creating'
-        print(f'  {action} {spec["path"]}...')
-
-        content = call_claude(COMPILE_PAGE_PROMPT.format(
-            page_path=spec['path'],
-            title=spec['title'],
-            thesis=spec.get('thesis', ''),
-            source_excerpts=excerpts,
-            existing_content=existing[:2000] if existing else '(new page)',
+        plan_raw = call_claude(COMPILE_PLAN_PROMPT.format(
+            source_summaries=source_summaries[:6000],
+            wiki_index=wiki_index[:2000],
         ))
-        page_path.write_text(content)
 
-        if existing:
-            updated.append(spec['title'])
-        else:
-            created.append(spec['title'])
-        print(f'    ✓')
-
-    # Update existing topic pages
-    for topic in topics:
-        if topic.get('action') != 'update':
-            continue
-        existing_path = topic.get('existing_page')
-        if not existing_path:
-            continue
         try:
-            page_path = safe_wiki_path(cwd, existing_path)
-        except UnsafePathError as exc:
-            print(f'  ⚠ skipped: {exc}')
-            continue
-        if not page_path.exists():
-            continue
-        relevant_sources = [s for s in sources if s['filename'] in topic.get('sources', [])]
-        if not relevant_sources:
-            continue
-        excerpts = get_source_excerpts(relevant_sources, topic['name'])
-        print(f'  Updating {existing_path}...')
-        content = call_claude(COMPILE_PAGE_PROMPT.format(
-            page_path=existing_path,
-            title=topic['name'],
-            thesis=f'Updated synthesis of {topic["name"]}',
-            source_excerpts=excerpts,
-            existing_content=page_path.read_text(errors='ignore')[:2000],
-        ))
-        page_path.write_text(content)
-        updated.append(topic['name'])
-        print(f'    ✓')
+            m = re.search(r'\{[\s\S]*\}', plan_raw)
+            plan = json.loads(m.group()) if m else {}
+        except Exception:
+            plan = {}
 
-    update_index(cwd, [{'title': t, 'path': s['path']} for t, s in
-                        zip(created, synthesis_pages[:len(created)])])
-    append_log(cwd, created, updated, gaps)
+        if not plan:
+            print('[PITH COMPILE: plan generation failed]\n' + plan_raw)
+            return
 
-    print(f'\nCompile complete.')
-    print(f'  Created: {len(created)}  Updated: {len(updated)}  Gaps filed: {len(gaps)}')
+        topics          = [t for t in plan.get('topics', []) if t.get('action') != 'skip']
+        synthesis_pages = plan.get('synthesis_pages', [])
+        gaps            = plan.get('gaps', [])
+
+        print(f'\nCompile plan:')
+        print(f'  Topics to process: {len(topics)}')
+        print(f'  Synthesis pages:   {len(synthesis_pages)}')
+        print(f'  Gaps identified:   {len(gaps)}')
+
+        if gaps:
+            print('\nGaps (missing knowledge):')
+            for g in gaps:
+                print(f'  - {g["description"]}')
+                print(f'    → suggested: {g.get("suggested_page", "??")}')
+
+        if dry_run:
+            print('\n[dry-run] No files written.')
+            return
+
+        created, updated = [], []
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+        # Write synthesis pages in parallel (prompt caching amortizes across calls)
+        if synthesis_pages:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(_write_page, spec, active_sources, cwd): spec
+                           for spec in synthesis_pages}
+                for fut in as_completed(futures):
+                    try:
+                        action, title = fut.result()
+                        (created if action == 'created' else updated).append(title)
+                        print(f'  ✓ {action} {title}')
+                    except Exception as exc:
+                        print(f'  ✗ {futures[fut]["title"]}: {exc}')
+
+        # Update existing topic pages (sequential — each may depend on previous)
+        for topic in topics:
+            if topic.get('action') != 'update':
+                continue
+            existing_path = topic.get('existing_page')
+            if not existing_path:
+                continue
+            try:
+                page_path = safe_wiki_path(cwd, existing_path)
+            except UnsafePathError as exc:
+                print(f'  ⚠ skipped: {exc}')
+                continue
+            if not page_path.exists():
+                continue
+            relevant = [s for s in active_sources if s['filename'] in topic.get('sources', [])]
+            if not relevant:
+                continue
+            excerpts = get_source_excerpts(relevant, topic['name'])
+            print(f'  Updating {existing_path}...')
+            existing = page_path.read_text(errors='ignore')
+            dynamic  = (
+                f"Page: {existing_path}\nTitle: {topic['name']}\n"
+                f"Thesis: Updated synthesis of {topic['name']}\n\n"
+                f"SOURCES (relevant excerpts):\n{excerpts}\n\n"
+                f"EXISTING PAGE CONTENT (if any):\n{existing[:2000]}"
+            )
+            _atomic_write(page_path, call_claude_page(dynamic))
+            updated.append(topic['name'])
+            print(f'    ✓')
+
+        update_index(cwd, [{'title': t, 'path': s['path']} for t, s in
+                            zip(created, synthesis_pages[:len(created)])])
+        append_log(cwd, created, updated, gaps)
+        _save_manifest(cwd, new_manifest)
+
+        print(f'\nCompile complete.')
+        print(f'  Created: {len(created)}  Updated: {len(updated)}  Gaps filed: {len(gaps)}')
 
 
 def main():
