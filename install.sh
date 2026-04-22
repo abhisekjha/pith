@@ -100,12 +100,15 @@ add('Stop',              'stop.js',            5, null);
 const existing = settings.statusLine;
 const isOurs = (cmd) => typeof cmd === 'string' && cmd.includes(hooksDir);
 const wrapperCmd = `bash "${hooksDir}/statusline-wrapper.sh"`;
+const plainCmd   = `bash "${hooksDir}/statusline.sh"`;
 
 // Merge with whatever is already in the pith config so we don't clobber
 // plugin_root written by the second config step.
 let cfg = {};
 try { cfg = JSON.parse(fs.readFileSync(pithCfgPath, 'utf8')); } catch (_) {}
-if (existing && existing.command && !isOurs(existing.command)) {
+const hasOriginalToPreserve =
+  existing && existing.command && !isOurs(existing.command);
+if (hasOriginalToPreserve) {
   cfg.original_statusline = { ...existing };
   console.log('  ✓ existing statusline preserved (will be composed with PITH badge)');
 } else if (!existing) {
@@ -117,10 +120,16 @@ fs.mkdirSync(path.dirname(pithCfgPath), { recursive: true });
 fs.writeFileSync(pithCfgPath, JSON.stringify(cfg, null, 2));
 try { fs.chmodSync(pithCfgPath, 0o600); } catch (_) {}
 
+// Default install (nothing to compose with) points straight at statusline.sh
+// so we don't pay for a wrapper that has nothing to do. Route through the
+// wrapper when there IS something to compose — either a user statusline we
+// just detected, or one preserved by a previous install still sitting in
+// the Pith config.
+const needsWrapper = hasOriginalToPreserve || !!cfg.original_statusline;
 settings.statusLine = {
   ...(existing && typeof existing === 'object' ? existing : {}),
   type: 'command',
-  command: wrapperCmd,
+  command: needsWrapper ? wrapperCmd : plainCmd,
 };
 
 fs.mkdirSync(path.dirname(settingsPath), { recursive: true });

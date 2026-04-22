@@ -19,7 +19,11 @@
 #
 # The command stored in original_statusline.command is the same command the
 # user already allowed Claude Code to execute via settings.statusLine, so
-# running it here introduces no new attack surface.
+# running it here introduces no new attack surface — provided the config
+# file itself hasn't been tampered with. Before honouring the saved command
+# we verify the config is a regular file, opened without following symlinks,
+# owned by us, and not group/other-writable. If any check fails the saved
+# command is ignored and the wrapper falls back to badge-only output.
 
 CONFIG="${HOME}/.config/pith/config.json"
 HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,16 +34,31 @@ pith="$(bash "${HOOKS_DIR}/statusline.sh" 2>/dev/null || printf 'PITH')"
 
 orig="$(
   python3 - "$CONFIG" <<'PY' 2>/dev/null
-import json, sys
+import json, os, stat, sys
+path = sys.argv[1]
 try:
-    with open(sys.argv[1]) as f:
-        c = json.load(f)
-    o = c.get("original_statusline") or {}
-    cmd = o.get("command") if isinstance(o, dict) else None
-    if cmd:
-        print(cmd)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
 except Exception:
-    pass
+    sys.exit(0)
+try:
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode):
+        sys.exit(0)
+    if st.st_uid != os.geteuid():
+        sys.exit(0)
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        sys.exit(0)
+    with os.fdopen(fd, "r") as f:
+        fd = -1
+        c = json.load(f)
+finally:
+    if fd != -1:
+        try: os.close(fd)
+        except Exception: pass
+o = c.get("original_statusline") or {}
+cmd = o.get("command") if isinstance(o, dict) else None
+if isinstance(cmd, str) and cmd:
+    print(cmd)
 PY
 )"
 

@@ -20,6 +20,7 @@ run() {
 }
 
 run bash      tests/test_shell_safety.sh
+run bash      tests/test_statusline_wrapper.sh
 run python3   tests/test_safe_paths.py
 run python3   tests/test_safe_fetch.py
 run python3   tests/test_graph_xss.py
