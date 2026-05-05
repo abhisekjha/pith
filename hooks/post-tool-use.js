@@ -201,6 +201,7 @@ function stripForBraceCount(line) {
 
 function jsSkeleton(content, lines, filePath) {
   const kept = [];
+  const droppedNames = [];
   let depth = 0;
   let inMLComment = false;
 
@@ -233,8 +234,16 @@ function jsSkeleton(content, lines, filePath) {
       )) ||
       (depth === 1 && t.match(/^(async\s+)?(static\s+)?(private\s+|public\s+|protected\s+)?(\w+)\s*[\(\{]/));
 
-    if (keep) kept.push(line);
-    else if (depth === 0 && !t) {
+    if (keep) {
+      kept.push(line);
+      let m;
+      if (depth === 0) {
+        if      (m = t.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)/)) droppedNames.push(m[1]);
+        else if (m = t.match(/^(?:const|let|var)\s+(\w+)\s*=/)) droppedNames.push(m[1]);
+      } else if (depth === 1) {
+        if (m = t.match(/^(?:async\s+)?(?:static\s+)?(?:(?:private|public|protected|override)\s+)*(\w+)\s*[\(\{]/)) droppedNames.push(m[1]);
+      }
+    } else if (depth === 0 && !t) {
       if (kept.length && kept[kept.length - 1] !== '') kept.push('');
     }
 
@@ -242,11 +251,12 @@ function jsSkeleton(content, lines, filePath) {
   }
 
   if (kept.length >= lines.length * 0.75) return headTail(lines, filePath, 40, 20);
-  return skeleton(kept, lines.length, filePath);
+  return skeleton(kept, lines.length, filePath, 'skeleton', droppedNames);
 }
 
 function pySkeleton(content, lines, filePath) {
   const kept = [];
+  const droppedNames = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const t = line.trim();
@@ -259,19 +269,22 @@ function pySkeleton(content, lines, filePath) {
       (line.match(/^\S/) && t.match(/^[A-Z_][A-Z_0-9]*\s*=/));  // CONSTANTS
     if (keep) {
       kept.push(line);
+      let m;
+      if (m = t.match(/^(?:async\s+)?def\s+(\w+)/)) droppedNames.push(m[1]);
       // Grab first docstring line
-      if ((t.startsWith('def ') || t.startsWith('class ')) && i + 1 < lines.length) {
+      if ((t.startsWith('def ') || t.startsWith('async def ') || t.startsWith('class ')) && i + 1 < lines.length) {
         const next = lines[i + 1].trim();
         if (next.startsWith('"""') || next.startsWith("'''")) kept.push(lines[i + 1]);
       }
     }
   }
   if (kept.length >= lines.length * 0.75) return headTail(lines, filePath, 40, 20);
-  return skeleton(kept, lines.length, filePath);
+  return skeleton(kept, lines.length, filePath, 'skeleton', droppedNames);
 }
 
 function goSkeleton(content, lines, filePath) {
   const kept = [];
+  const droppedNames = [];
   let depth = 0;
   for (const line of lines) {
     const t = line.trim();
@@ -284,14 +297,18 @@ function goSkeleton(content, lines, filePath) {
       t.startsWith('var ') || t.startsWith('const ') ||
       t.startsWith('//')
     );
-    if (keep) kept.push(line);
-    else if (depth === 0 && !t) {
+    if (keep) {
+      kept.push(line);
+      // func Name(...) or func (recv) Name(...)
+      let m;
+      if (m = t.match(/^func\s+(?:\([^)]*\)\s+)?(\w+)\s*[\(\[{]/)) droppedNames.push(m[1]);
+    } else if (depth === 0 && !t) {
       if (kept.length && kept[kept.length - 1] !== '') kept.push('');
     }
     depth = Math.max(0, depth + opens - closes);
   }
   if (kept.length >= lines.length * 0.75) return headTail(lines, filePath, 40, 20);
-  return skeleton(kept, lines.length, filePath);
+  return skeleton(kept, lines.length, filePath, 'skeleton', droppedNames);
 }
 
 function genericSkeleton(content, lines, filePath) {
@@ -485,11 +502,20 @@ function compressWeb(url, content, lines) {
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 
-function skeleton(kept, totalLines, label, kind = 'skeleton') {
+function skeleton(kept, totalLines, label, kind = 'skeleton', droppedNames = []) {
   const name = path.basename(String(label));
+  let footer;
+  if (droppedNames.length) {
+    const shown = droppedNames.slice(0, 12);
+    const extra = droppedNames.length - shown.length;
+    const list  = shown.join(', ') + (extra > 0 ? `, …+${extra} more` : '');
+    footer = `[Dropped bodies: ${list} — ask by name for full implementation]`;
+  } else {
+    footer = `[Full file: ask for specific function/section by name]`;
+  }
   return `[PITH ${kind.toUpperCase()}: ${name} — ${totalLines} lines → ${kept.length} shown]\n\n` +
          kept.join('\n').replace(/\n{3,}/g, '\n\n') +
-         `\n\n[Full file: ask for specific function/section by name]`;
+         `\n\n${footer}`;
 }
 
 function headTail(lines, label, head, tail) {
