@@ -189,6 +189,16 @@ function compressFileRead(filePath, content, lines) {
   return headTail(lines, filePath, 25, 15);
 }
 
+// Strip string literals and // comments before counting braces so that
+// content like `const x = "{"` doesn't throw off depth tracking.
+function stripForBraceCount(line) {
+  return line
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/\/\/.*$/, '');
+}
+
 function jsSkeleton(content, lines, filePath) {
   const kept = [];
   let depth = 0;
@@ -203,9 +213,9 @@ function jsSkeleton(content, lines, filePath) {
       continue;
     }
 
-    // Brace counting (ignoring strings is approximate but good enough)
-    const opens = (line.match(/\{/g) || []).length;
-    const closes = (line.match(/\}/g) || []).length;
+    const stripped = stripForBraceCount(line);
+    const opens = (stripped.match(/\{/g) || []).length;
+    const closes = (stripped.match(/\}/g) || []).length;
 
     const keep =
       t.startsWith('import ') ||
@@ -265,8 +275,9 @@ function goSkeleton(content, lines, filePath) {
   let depth = 0;
   for (const line of lines) {
     const t = line.trim();
-    const opens = (line.match(/\{/g) || []).length;
-    const closes = (line.match(/\}/g) || []).length;
+    const stripped = stripForBraceCount(line);
+    const opens = (stripped.match(/\{/g) || []).length;
+    const closes = (stripped.match(/\}/g) || []).length;
     const keep = depth === 0 && (
       t.startsWith('package ') || t.startsWith('import ') ||
       t.startsWith('func ') || t.startsWith('type ') ||
