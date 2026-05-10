@@ -23,11 +23,14 @@ for cmd in pith budget focus pith-graph; do
   fi
 done
 
-# Patch settings.json — remove pith hooks and statusline
+# Patch settings.json — remove pith hooks and restore any pre-Pith statusline.
 if [ -f "${SETTINGS}" ]; then
-  node - "${SETTINGS}" <<'NODESCRIPT'
+  PITH_CONFIG="${HOME}/.config/pith/config.json"
+  node - "${SETTINGS}" "${PITH_CONFIG}" "${HOOKS_DIR}" <<'NODESCRIPT'
 const fs = require('fs');
-const p  = process.argv[2];
+const p           = process.argv[2];
+const pithCfgPath = process.argv[3];
+const hooksDir    = process.argv[4];
 let s = {};
 try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
 
@@ -42,9 +45,36 @@ if (s.hooks) {
   if (Object.keys(s.hooks).length === 0) delete s.hooks;
 }
 
-// Remove statusline if it's ours
-if (s.statusLine && JSON.stringify(s.statusLine).includes('pith')) {
-  delete s.statusLine;
+// Decide whether a statusLine entry is ours. Matching "pith" anywhere in the
+// serialised object would false-positive on a user command that happens to
+// contain the substring (e.g. a prompt printing "pithy"), so we scope the
+// check to `command` and require it to point at one of our two scripts.
+function isPithStatusLine(statusLine) {
+  if (!statusLine || typeof statusLine !== 'object') return false;
+  const command = statusLine.command;
+  if (typeof command !== 'string') return false;
+  return (
+    command.includes(`${hooksDir}/statusline.sh`) ||
+    command.includes(`${hooksDir}/statusline-wrapper.sh`)
+  );
+}
+
+// Restore the user's pre-Pith statusline if we saved one; otherwise strip
+// ours entirely. Only touch statusLine if it's in fact ours.
+if (isPithStatusLine(s.statusLine)) {
+  let original = null;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(pithCfgPath, 'utf8'));
+    if (cfg && cfg.original_statusline && cfg.original_statusline.command) {
+      original = cfg.original_statusline;
+    }
+  } catch (_) {}
+  if (original) {
+    s.statusLine = original;
+    console.log('  ✓ original statusline restored');
+  } else {
+    delete s.statusLine;
+  }
 }
 
 fs.writeFileSync(p, JSON.stringify(s, null, 2));
